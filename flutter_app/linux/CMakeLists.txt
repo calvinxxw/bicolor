@@ -106,6 +106,15 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     COMPONENT Runtime)
 endforeach(bundled_library)
 
+set(TFLITE_BLOB "${PROJECT_BUILD_DIR}/../blobs/libtensorflowlite_c-linux.so")
+if(EXISTS "${TFLITE_BLOB}")
+  install(FILES "${TFLITE_BLOB}"
+    DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/../blobs/"
+    COMPONENT Runtime)
+else()
+  message(WARNING "Missing ${TFLITE_BLOB}; Select TF ops models require this at runtime.")
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
