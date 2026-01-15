@@ -38,7 +38,7 @@ dependencies:
   html: ^0.15.4
   sqflite: ^2.3.2
   path_provider: ^2.1.2
-  tflite_flutter: ^0.10.4
+  tflite_flutter: ^0.12.1
   fl_chart: ^0.66.2
   provider: ^6.1.1
   intl: ^0.19.0
