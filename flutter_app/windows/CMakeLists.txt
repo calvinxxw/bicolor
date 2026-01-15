@@ -87,7 +87,7 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
-set(TFLITE_BLOB "${PROJECT_BUILD_DIR}/../blobs/libtensorflowlite_c-win.dll")
+set(TFLITE_BLOB "${CMAKE_CURRENT_SOURCE_DIR}/blobs/libtensorflowlite_c-win.dll")
 if(EXISTS "${TFLITE_BLOB}")
   install(FILES "${TFLITE_BLOB}"
     DESTINATION "${INSTALL_BUNDLE_DATA_DIR}/../blobs/"
@@ -98,9 +98,11 @@ endif()
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
-install(DIRECTORY "${NATIVE_ASSETS_DIR}"
-   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-   COMPONENT Runtime)
+if(EXISTS "${NATIVE_ASSETS_DIR}")
+  install(DIRECTORY "${NATIVE_ASSETS_DIR}"
+     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+     COMPONENT Runtime)
+endif()
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
