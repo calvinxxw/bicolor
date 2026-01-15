@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# TFLite binaries - committed to repo for easier setup
+# (windows/blobs/ and linux/blobs/ are tracked)
