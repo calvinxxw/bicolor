@@ -2,15 +2,42 @@
 
 A new Flutter project.
 
-## TFLite Select TF Ops setup
+## Setup
 
-The exported models require Select TF ops (Flex) support at runtime.
+### Prerequisites
+- Flutter SDK (3.x or later)
+- Dart SDK (included with Flutter)
 
-- Android: `tensorflow-lite-select-tf-ops:2.12.0` is included in `android/app/build.gradle.kts`.
-- iOS/macOS: Podfiles include `TensorFlowLiteSelectTfOps`. Run `pod install` on macOS after `flutter pub get`.
-- Windows/Linux: Build a TFLite C library with Select TF ops and place it in
-  `windows/blobs/libtensorflowlite_c-win.dll` or `linux/blobs/libtensorflowlite_c-linux.so`.
-  The platform CMake files copy the library into the app bundle.
+### TensorFlow Lite Setup
+
+The app uses `tflite_flutter` package (v0.12.1 with LiteRT 1.4.0) which requires platform-specific binaries with Flex delegate support.
+
+#### Android
+`tensorflow-lite-select-tf-ops:2.12.0` is included in `android/app/build.gradle.kts`. No additional setup required.
+
+#### iOS/macOS
+Podfiles include `TensorFlowLiteSelectTfOps`. Run `pod install` on macOS after `flutter pub get`.
+
+#### Windows/Linux
+Manual binary setup is required:
+
+1. Obtain TFLite C library with Select TF ops support:
+   - Download pre-built binaries from TensorFlow releases, or
+   - Build from source following TensorFlow Lite documentation
+
+2. Place the binary in the appropriate location:
+   - Windows: `windows/blobs/libtensorflowlite_c-win.dll`
+   - Linux: `linux/blobs/libtensorflowlite_c-linux.so`
+
+3. Verify the binary includes Flex delegate support (required for Select TF ops)
+
+The CMakeLists.txt automatically copies the TFLite binary to the app bundle during build.
+
+### Building
+
+```bash
+flutter build windows  # or linux/ios/android
+```
 
 ## Getting Started
 
