@@ -17,7 +17,18 @@ class PredictionService {
   static const List<int> _blueBallHistory = [8, 12, 5, 10, 3];
 
   Future<void> loadModels() async {
-    // TODO: Implement in next step
+    if (_redBallInterpreter != null && _blueBallInterpreter != null) {
+      return; // Already loaded
+    }
+
+    try {
+      _redBallInterpreter = await Interpreter.fromAsset('assets/models/red_ball_model.tflite');
+      _blueBallInterpreter = await Interpreter.fromAsset('assets/models/blue_ball_model.tflite');
+      print('Models loaded successfully');
+    } catch (e) {
+      print('Error loading models: $e');
+      rethrow;
+    }
   }
 
   Future<PredictionResult> predict() async {
