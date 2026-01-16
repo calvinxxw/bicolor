@@ -32,8 +32,55 @@ class PredictionService {
   }
 
   Future<PredictionResult> predict() async {
-    // TODO: Implement in next step
-    throw UnimplementedError();
+    await loadModels();
+
+    // Prepare red ball input (5x6 matrix)
+    final redInput = List.generate(
+      5,
+      (i) => _redBallHistory[i].map((n) => n.toDouble()).toList(),
+    );
+
+    // Prepare blue ball input (5x1 matrix)
+    final blueInput = _blueBallHistory.map((n) => [n.toDouble()]).toList();
+
+    // Run red ball inference
+    final redOutput = List.filled(33, 0.0).reshape([1, 33]);
+    _redBallInterpreter!.run(redInput, redOutput);
+
+    // Run blue ball inference
+    final blueOutput = List.filled(16, 0.0).reshape([1, 16]);
+    _blueBallInterpreter!.run(blueInput, blueOutput);
+
+    // Parse red ball predictions (top 6)
+    final redProbabilities = redOutput[0] as List<double>;
+    final redBallsWithProbs = List.generate(
+      33,
+      (i) => {'number': i + 1, 'prob': redProbabilities[i]},
+    );
+    redBallsWithProbs.sort((a, b) => (b['prob'] as double).compareTo(a['prob'] as double));
+
+    final redBalls = redBallsWithProbs
+        .take(6)
+        .map((item) => BallPrediction(
+              number: item['number'] as int,
+              confidence: item['prob'] as double,
+            ))
+        .toList();
+
+    // Parse blue ball prediction (top 1)
+    final blueProbabilities = blueOutput[0] as List<double>;
+    final blueBallsWithProbs = List.generate(
+      16,
+      (i) => {'number': i + 1, 'prob': blueProbabilities[i]},
+    );
+    blueBallsWithProbs.sort((a, b) => (b['prob'] as double).compareTo(a['prob'] as double));
+
+    final blueBall = BallPrediction(
+      number: blueBallsWithProbs[0]['number'] as int,
+      confidence: blueBallsWithProbs[0]['prob'] as double,
+    );
+
+    return PredictionResult(redBalls: redBalls, blueBall: blueBall);
   }
 
   void dispose() {
