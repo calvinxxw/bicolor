@@ -44,11 +44,11 @@ class PredictionService {
     final blueInput = _blueBallHistory.map((n) => [n.toDouble()]).toList();
 
     // Run red ball inference
-    final redOutput = List.filled(33, 0.0).reshape([1, 33]);
+    final redOutput = [List.filled(33, 0.0)];
     _redBallInterpreter!.run(redInput, redOutput);
 
     // Run blue ball inference
-    final blueOutput = List.filled(16, 0.0).reshape([1, 16]);
+    final blueOutput = [List.filled(16, 0.0)];
     _blueBallInterpreter!.run(blueInput, blueOutput);
 
     // Parse red ball predictions (top 6)
