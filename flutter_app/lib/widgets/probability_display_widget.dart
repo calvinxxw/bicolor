@@ -14,7 +14,7 @@ class ProbabilityDisplayWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final probabilityService = ProbabilityService();
-    final probabilities = probabilityService.calculateProbabilities(selection);
+    final Map<String, double> probabilities = probabilityService.calculateProbabilities(selection);
     final anyPrizeProbability =
         probabilityService.calculateAnyPrizeProbability(selection);
 
@@ -42,7 +42,14 @@ class ProbabilityDisplayWidget extends StatelessWidget {
               ],
             ),
             const Divider(),
-            ...probabilities.map((prob) => _buildProbabilityRow(prob)),
+            ...probabilities.entries.map((entry) {
+              final prob = WinningProbability(
+                tier: PrizeTier.first, // Simplified for prototype
+                probability: entry.value,
+                combinations: selection.totalCombinations,
+              );
+              return _buildProbabilityRow(prob);
+            }),
             const Divider(),
             _buildAnyPrizeRow(anyPrizeProbability),
             const SizedBox(height: 12),

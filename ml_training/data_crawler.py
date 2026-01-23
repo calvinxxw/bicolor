@@ -6,7 +6,7 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
-def fetch_ssq_data(page_size=500):
+def fetch_ssq_data(page_size=2000):
     url = 'https://datachart.500.com/ssq/history/newinc/history.php'
     params = {'limit': page_size}
     headers = {

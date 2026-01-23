@@ -24,10 +24,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initializeData() async {
-    // Insert sample data if database is empty
-    await _dataService.insertSampleData();
     await _loadRecentResults();
-    await _autoSyncIfNeeded();
+    if (_recentResults.isEmpty) {
+      await _syncData();
+    }
   }
 
   Future<void> _loadRecentResults() async {
@@ -39,15 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _autoSyncIfNeeded() async {
-    // Auto-sync if no data or last sync was more than 1 hour ago
-    if (_recentResults.isEmpty ||
-        _lastSyncTime == null ||
-        DateTime.now().difference(_lastSyncTime!).inHours >= 1) {
-      await _syncData();
-    }
-  }
-
   Future<void> _syncData() async {
     if (_isLoading) return;
 
@@ -56,40 +47,28 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      await _dataService.syncData();
+      final count = await _dataService.syncData();
       await _loadRecentResults();
       setState(() {
         _lastSyncTime = DateTime.now();
       });
 
       if (mounted) {
+        String msg = count > 0 ? '成功同步 $count 条新数据' : '已经是最新数据';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('数据同步成功'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: count > 0 ? Colors.green : Colors.blueGrey,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        String message = '同步失败';
-        if (e.toString().contains('Connection refused')) {
-          message = '网络连接失败，请检查网络设置';
-        } else if (e.toString().contains('404')) {
-          message = '服务器接口地址已变更，请联系开发者';
-        } else {
-          message = '同步失败: $e';
-        }
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(message),
+            content: Text('同步失败: $e'),
             backgroundColor: Colors.red,
-            action: SnackBarAction(
-              label: '重试',
-              textColor: Colors.white,
-              onPressed: _syncData,
-            ),
           ),
         );
       }
@@ -133,9 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Padding(
-              padding: EdgeInsets.only(bottom: 24),
+              padding: EdgeInsets.only(top: 32, bottom: 24),
               child: Text(
-                '© 2026 许迅文. All Rights Reserved.',
+                '漏 2026 许迅文. All Rights Reserved.',
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),

@@ -40,8 +40,8 @@ class _BetCalculatorScreenState extends State<BetCalculatorScreen> {
 
     final combinations = _betService.generateCombinationsPage(
       widget.selection,
-      page: _currentPage,
-      pageSize: _pageSize,
+      _currentPage,
+      _pageSize,
     );
 
     setState(() {

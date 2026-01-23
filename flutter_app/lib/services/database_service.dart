@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/lottery_result.dart';
@@ -17,23 +18,97 @@ class DatabaseService {
       path,
       version: 1,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE lottery_results (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            issue TEXT UNIQUE,
-            draw_date TEXT,
-            red1 INTEGER,
-            red2 INTEGER,
-            red3 INTEGER,
-            red4 INTEGER,
-            red5 INTEGER,
-            red6 INTEGER,
-            blue INTEGER,
-            created_at TEXT
-          )
-        ''');
+        await _createTables(db);
+        await _importLocalHistory(db);
+      },
+      onOpen: (db) async {
+        final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM lottery_results'));
+        print("DatabaseService: onOpen count = $count");
+        if (count == null || count < 50) {
+          await _importLocalHistory(db);
+        }
       },
     );
+  }
+
+  Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE lottery_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issue TEXT UNIQUE,
+        draw_date TEXT,
+        red1 INTEGER,
+        red2 INTEGER,
+        red3 INTEGER,
+        red4 INTEGER,
+        red5 INTEGER,
+        red6 INTEGER,
+        blue INTEGER,
+        created_at TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        issue TEXT,
+        red_balls TEXT,
+        blue_balls TEXT,
+        total_cost INTEGER,
+        winning_status TEXT DEFAULT '待开奖',
+        created_at TEXT
+      )
+    ''');
+  }
+
+  Future<Map<String, dynamic>?> getLotteryResultByIssue(String issue) async {
+    final db = await database;
+    final results = await db.query(
+      'lottery_results',
+      where: 'issue = ?',
+      whereArgs: [issue],
+      limit: 1,
+    );
+    return results.isNotEmpty ? results.first : null;
+  }
+
+  Future<void> _importLocalHistory(Database db) async {
+    try {
+      print("DatabaseService: Starting local history import...");
+      final String csvData = await rootBundle.loadString('assets/data/history.csv');
+      List<String> lines = csvData.split('\n');
+      
+      // The CSV has headers: issue,date,red1,red2,red3,red4,red5,red6,blue
+      Batch batch = db.batch();
+      int count = 0;
+      for (int i = 1; i < lines.length; i++) {
+        final line = lines[i].trim();
+        if (line.isEmpty) continue;
+        final cols = line.split(',');
+        if (cols.length < 9) continue;
+        
+        try {
+          batch.insert('lottery_results', {
+            'issue': cols[0].trim(),
+            'draw_date': cols[1].trim(),
+            'red1': int.parse(cols[2]),
+            'red2': int.parse(cols[3]),
+            'red3': int.parse(cols[4]),
+            'red4': int.parse(cols[5]),
+            'red5': int.parse(cols[6]),
+            'red6': int.parse(cols[7]),
+            'blue': int.parse(cols[8]),
+            'created_at': DateTime.now().toIso8601String(),
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+          count++;
+        } catch (e) {
+          // Skip errors
+        }
+      }
+      await batch.commit(noResult: true);
+      print("DatabaseService: Successfully imported $count draws from local assets.");
+    } catch (e) {
+      print("DatabaseService: Local import CRITICAL failure: $e");
+    }
   }
 
   Future<int> insertResult(LotteryResult result) async {
@@ -72,104 +147,28 @@ class DatabaseService {
     return maps.first['issue'] as String;
   }
 
-  Future<void> insertSampleData() async {
+  Future<int> insertPurchase(String issue, List<int> reds, int blue) async {
     final db = await database;
+    return await db.insert('purchases', {
+      'issue': issue,
+      'red_balls': reds.join(','),
+      'blue_ball': blue,
+      'status': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
 
-    // Check if data already exists
-    final count = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM lottery_results')
-    );
+  Future<List<Map<String, dynamic>>> getPurchases() async {
+    final db = await database;
+    return await db.query('purchases', orderBy: 'created_at DESC');
+  }
 
-    if (count != null && count > 0) {
-      return; // Data already exists
-    }
-
-    // Insert 10 sample lottery results
-    final sampleData = [
-      LotteryResult(
-        id: 0,
-        issue: '2026010',
-        drawDate: '2026-01-20',
-        redBalls: [3, 7, 12, 18, 25, 31],
-        blueBall: 8,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026009',
-        drawDate: '2026-01-18',
-        redBalls: [5, 9, 15, 22, 28, 33],
-        blueBall: 12,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026008',
-        drawDate: '2026-01-16',
-        redBalls: [2, 8, 14, 19, 26, 30],
-        blueBall: 5,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026007',
-        drawDate: '2026-01-14',
-        redBalls: [4, 11, 16, 23, 27, 32],
-        blueBall: 10,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026006',
-        drawDate: '2026-01-11',
-        redBalls: [1, 6, 13, 20, 24, 29],
-        blueBall: 3,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026005',
-        drawDate: '2026-01-09',
-        redBalls: [7, 10, 17, 21, 28, 33],
-        blueBall: 15,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026004',
-        drawDate: '2026-01-07',
-        redBalls: [2, 9, 14, 18, 25, 31],
-        blueBall: 6,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026003',
-        drawDate: '2026-01-04',
-        redBalls: [5, 11, 16, 22, 27, 32],
-        blueBall: 11,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026002',
-        drawDate: '2026-01-02',
-        redBalls: [3, 8, 15, 19, 26, 30],
-        blueBall: 9,
-        createdAt: DateTime.now(),
-      ),
-      LotteryResult(
-        id: 0,
-        issue: '2026001',
-        drawDate: '2025-12-31',
-        redBalls: [1, 7, 12, 20, 24, 29],
-        blueBall: 14,
-        createdAt: DateTime.now(),
-      ),
-    ];
-
-    for (final result in sampleData) {
-      await insertResult(result);
-    }
+  Future<void> updatePurchaseStatus(int id, int hitRed, int hitBlue) async {
+    final db = await database;
+    await db.update('purchases', {
+      'status': 1,
+      'hit_red': hitRed,
+      'hit_blue': hitBlue,
+    }, where: 'id = ?', whereArgs: [id]);
   }
 }

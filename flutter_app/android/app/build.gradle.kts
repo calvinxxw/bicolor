@@ -28,6 +28,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86_64"))
+        }
     }
 
     buildTypes {
@@ -37,6 +41,16 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        resources {
+            pickFirsts.add("lib/**/libonnxruntime.so")
+        }
+    }
+}
+
+dependencies {
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
 }
 
 flutter {
@@ -44,5 +58,4 @@ flutter {
 }
 
 dependencies {
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.12.0")
 }
