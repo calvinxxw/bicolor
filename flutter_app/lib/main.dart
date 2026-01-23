@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'screens/home_screen.dart';
+import 'screens/history_screen.dart';
+import 'screens/manual_selection_screen.dart';
+import 'screens/bet_calculator_screen.dart';
+import 'models/bet_selection.dart';
 import 'services/prediction_service.dart';
 import 'models/prediction_result.dart';
 import 'widgets/ball_widget.dart';
@@ -18,7 +23,76 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const PredictionScreen(),
+      home: const MainScreen(),
+      onGenerateRoute: (settings) {
+        if (settings.name == '/history') {
+          return MaterialPageRoute(
+            builder: (context) => const HistoryScreen(),
+          );
+        } else if (settings.name == '/bet-calculator') {
+          final selection = settings.arguments as BetSelection;
+          return MaterialPageRoute(
+            builder: (context) => BetCalculatorScreen(selection: selection),
+          );
+        }
+        return null;
+      },
+    );
+  }
+}
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    const HomeScreen(),
+    const ManualSelectionScreen(),
+    const PredictionScreen(),
+  ];
+
+  final List<String> _titles = [
+    '双色球',
+    '手动选号',
+    'AI预测',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_titles[_currentIndex]),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: _screens[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: '首页',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.grid_on),
+            label: '手动选号',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.psychology),
+            label: 'AI预测',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -69,45 +143,71 @@ class _PredictionScreenState extends State<PredictionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Lottery Prediction'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_isLoading)
-                const CircularProgressIndicator()
-              else if (_result == null)
-                const Text(
-                  'Tap "Predict" to generate lottery numbers',
-                  style: TextStyle(fontSize: 16),
-                  textAlign: TextAlign.center,
-                )
-              else
-                _buildPredictionDisplay(),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _runPrediction,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  child: Text('Predict', style: TextStyle(fontSize: 18)),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_isLoading)
+              const Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('AI 正在计算最佳中奖组合...', style: TextStyle(color: Colors.grey)),
+                ],
+              )
+            else if (_result == null)
+              Column(
+                children: [
+                  Icon(Icons.auto_awesome, size: 64, color: Colors.deepPurple[200]),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '基于深度学习模型预测下一期号码\n(仅供参考)',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              )
+            else
+              _buildPredictionDisplay(),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: _isLoading ? null : _runPrediction,
+              icon: const Icon(Icons.psychology),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text('生成预测', style: TextStyle(fontSize: 18)),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+              ),
+            ),
+            if (_errorMessage != null)
+              const Padding(
+                padding: EdgeInsets.only(top: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red, size: 16),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '预测出错了，已为您生成推荐号码',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (_errorMessage != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-            ],
-          ),
+            const SizedBox(height: 32),
+            const Text(
+              '漏 2026 璁歌繀鏂. All Rights Reserved.',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );
@@ -117,7 +217,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
     return Column(
       children: [
         const Text(
-          'Red Balls',
+          '红球',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
@@ -139,7 +239,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'Blue Ball',
+          '蓝球',
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
