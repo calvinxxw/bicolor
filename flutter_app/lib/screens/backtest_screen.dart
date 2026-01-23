@@ -64,7 +64,8 @@ class _BacktestScreenState extends State<BacktestScreen> {
         final reds = List<int>.from(jsonDecode(item['red_balls']));
         final blues = List<int>.from(jsonDecode(item['blue_balls']));
         final status = item['winning_status'] ?? '待开奖';
-        final isWon = status.contains('奖');
+        final isWon = status.contains('奖') && !status.contains('未');
+        final hasDrawData = item['draw_reds'] != null;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
@@ -98,14 +99,52 @@ class _BacktestScreenState extends State<BacktestScreen> {
                   ],
                 ),
                 const Divider(height: 24),
-                const Text('投注号码:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                if (hasDrawData) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('实际开奖:', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                      Text(item['draw_date'] ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      ...(item['draw_reds'] as List).map((n) => BallWidget(number: n as int, size: 24, opacity: 0.6)),
+                      BallWidget(number: item['draw_blue'] as int, size: 24, isBlue: true, opacity: 0.6),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('您的选号:', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                ] else ...[
+                  const Text('投注号码:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    ...reds.map((n) => BallWidget(number: n, size: 28)),
-                    ...blues.map((n) => BallWidget(number: n, size: 28, isBlue: true)),
+                    ...reds.map((n) {
+                      bool isHit = hasDrawData && (item['draw_reds'] as List).contains(n);
+                      return BallWidget(
+                        number: n, 
+                        size: 28,
+                        borderColor: isHit ? Colors.red : null,
+                        borderWidth: isHit ? 2 : 0,
+                      );
+                    }),
+                    ...blues.map((n) {
+                      bool isHit = hasDrawData && item['draw_blue'] == n;
+                      return BallWidget(
+                        number: n, 
+                        size: 28, 
+                        isBlue: true,
+                        borderColor: isHit ? Colors.blue[900] : null,
+                        borderWidth: isHit ? 2 : 0,
+                      );
+                    }),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -113,12 +152,12 @@ class _BacktestScreenState extends State<BacktestScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '金额: ¥${item['total_cost']}',
-                      style: const TextStyle(color: Colors.black87),
+                      '总金额: ¥${item['total_cost']}',
+                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w500),
                     ),
                     Text(
-                      '日期: ${item['created_at'].toString().split('T')[0]}',
-                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                      '保存于: ${item['created_at'].toString().split('T')[0]}',
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
                     ),
                   ],
                 ),

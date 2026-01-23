@@ -32,18 +32,24 @@ class BetService {
     List<Map<String, dynamic>> results = [];
     for (var p in purchases) {
       var mutableP = Map<String, dynamic>.from(p);
+      final drawData = await _db.getLotteryResultByIssue(mutableP['issue']);
       
-      if (mutableP['winning_status'] == '待开奖') {
-        final draw = await _db.getLotteryResultByIssue(mutableP['issue']);
-        if (draw != null) {
+      if (drawData != null) {
+        final drawResult = LotteryResult.fromMap(drawData);
+        // If it's still '待开奖', verify it now
+        if (mutableP['winning_status'] == '待开奖') {
           final status = _verifyWin(
             purchasedReds: List<int>.from(jsonDecode(mutableP['red_balls'])),
             purchasedBlues: List<int>.from(jsonDecode(mutableP['blue_balls'])),
-            drawResult: LotteryResult.fromMap(draw),
+            drawResult: drawResult,
           );
           await db.update('purchases', {'winning_status': status}, where: 'id = ?', whereArgs: [mutableP['id']]);
           mutableP['winning_status'] = status;
         }
+        // Include actual draw info for UI display
+        mutableP['draw_reds'] = drawResult.redBalls;
+        mutableP['draw_blue'] = drawResult.blueBall;
+        mutableP['draw_date'] = drawResult.drawDate;
       }
       results.add(mutableP);
     }

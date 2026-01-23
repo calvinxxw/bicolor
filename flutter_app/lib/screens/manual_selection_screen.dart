@@ -74,8 +74,11 @@ class _ManualSelectionScreenState extends State<ManualSelectionScreen> {
     if (!_selection.isValid) return;
     setState(() { _isSaving = true; });
     try {
-      final latestIssue = await DataService().getLatestIssue();
-      String targetIssue = latestIssue ?? "2026001";
+      // Logic: If latest in DB is 26009, next is likely 26010
+      final latestIssueStr = await DataService().getLatestIssue();
+      int latestIssueNum = int.tryParse(latestIssueStr ?? "26000") ?? 26000;
+      String targetIssue = (latestIssueNum + 1).toString();
+
       await _betService.savePurchase(
         issue: targetIssue,
         redBalls: _selection.selectedRedBalls.toList(),
@@ -84,7 +87,7 @@ class _ManualSelectionScreenState extends State<ManualSelectionScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('投注记录已保存！可前往“历史回测”查看中奖情况')),
+          SnackBar(content: Text('投注记录已保存为 $targetIssue 期！可前往“历史回测”查看。')),
         );
         _clearAll();
       }
@@ -140,6 +143,78 @@ class _ManualSelectionScreenState extends State<ManualSelectionScreen> {
     }
   }
 
+  Future<void> _runHistoricalBacktest() async {
+    if (!_selection.isValid) return;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final history = await DataService().getRecentResults(50);
+      int hit4Plus = 0;
+      int hit3 = 0;
+      int hitBlue = 0;
+
+      for (var draw in history) {
+        int redHits = 0;
+        for (int r in _selection.selectedRedBalls) {
+          if (draw.redBalls.contains(r)) redHits++;
+        }
+        bool blueHit = _selection.selectedBlueBalls.contains(draw.blueBall);
+        
+        if (redHits >= 4) hit4Plus++;
+        else if (redHits == 3) hit3++;
+        if (blueHit) hitBlue++;
+      }
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('历史模拟回测 (近50期)'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildBacktestResultRow('命中 4+ 红球', hit4Plus, 50),
+                _buildBacktestResultRow('命中 3 个红球', hit3, 50),
+                _buildBacktestResultRow('命中蓝球', hitBlue, 50),
+                const Divider(),
+                const Text('注：此回测基于您的当前选号组合进行模拟。', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('确定')),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('回测失败: $e')));
+      }
+    }
+  }
+
+  Widget _buildBacktestResultRow(String label, int count, int total) {
+    double rate = (count / total) * 100;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text('$count 次 (${rate.toStringAsFixed(1)}%)', style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -150,13 +225,21 @@ class _ManualSelectionScreenState extends State<ManualSelectionScreen> {
             children: [
               if (_isAILoading)
                 const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
-              else
+              else ...[
                 ElevatedButton.icon(
                   onPressed: _loadAIProbabilities,
                   icon: const Icon(Icons.auto_awesome, size: 18),
                   label: const Text('AI 智能推荐'),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
                 ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _selection.isValid ? _runHistoricalBacktest : null,
+                  icon: const Icon(Icons.analytics_outlined, size: 18),
+                  label: const Text('模拟回测'),
+                  style: OutlinedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+                ),
+              ],
               const Spacer(),
               TextButton.icon(icon: const Icon(Icons.delete_outline), label: const Text('清空'), onPressed: _clearAll),
             ],

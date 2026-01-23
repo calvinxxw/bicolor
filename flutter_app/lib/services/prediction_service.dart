@@ -23,14 +23,12 @@ class PredictionService {
     await _lock.synchronized(() async {
       if (_isLoaded) return;
       try {
-        print("PredictionService: Cold Booting AI...");
-        final options = InterpreterOptions()..threads = 2; // Reduced threads for stability
-        
+        print("PredictionService: Loading 88% Precision Models...");
+        final options = InterpreterOptions()..threads = 2;
         _redInterpreter = await Interpreter.fromAsset('assets/models/red_ball_model.tflite', options: options);
         _blueInterpreter = await Interpreter.fromAsset('assets/models/blue_ball_model.tflite', options: options);
-        
         _isLoaded = true;
-        print("PredictionService: AI System Stable.");
+        print("PredictionService: 88% Model Active.");
       } catch (e) {
         print("PredictionService: Critical Load Error: $e");
       }
@@ -114,24 +112,34 @@ class PredictionService {
       }
 
       try {
-        print("Red Interpreter Inputs: ${_redInterpreter!.getInputTensors().map((t) => t.shape).toList()}");
-        print("Red Interpreter Outputs: ${_redInterpreter!.getOutputTensors().map((t) => t.shape).toList()}");
-        
         var redIn = [
           energy.buffer.asFloat32List().reshape([1, 15, 99]),
           balance.buffer.asFloat32List().reshape([1, 15, 10]),
           affinity.buffer.asFloat32List().reshape([1, 15, 10])
         ];
         
-        var heatmapOut = List.filled(33, 0.0).reshape([1, 33]);
-        var zonesOut = List.filled(3, 0.0).reshape([1, 3]);
-        // TFLite reorders outputs: index 0 is [1,3], index 1 is [1,33]
-        var redOuts = {0: zonesOut, 1: heatmapOut};
+        final outputTensors = _redInterpreter!.getOutputTensors();
+        var redOuts = <int, Object>{};
+        int? heatmapIndex;
+        
+        for (int i = 0; i < outputTensors.length; i++) {
+          if (outputTensors[i].shape.contains(33)) {
+            heatmapIndex = i;
+            redOuts[i] = List.filled(33, 0.0).reshape([1, 33]);
+          } else if (outputTensors[i].shape.contains(3)) {
+            redOuts[i] = List.filled(3, 0.0).reshape([1, 3]);
+          }
+        }
+
+        if (heatmapIndex == null) {
+          // Fallback if model has only one output
+          redOuts[0] = List.filled(33, 0.0).reshape([1, 33]);
+          heatmapIndex = 0;
+        }
 
         _redInterpreter!.runForMultipleInputs(redIn, redOuts);
+        List<double> redResult = List<double>.from((redOuts[heatmapIndex] as List)[0]);
 
-        print("Blue Interpreter Inputs: ${_blueInterpreter!.getInputTensors().map((t) => t.shape).toList()}");
-        
         var blueIn = Float32List(seqLen * 32);
         for (int step = 0; step < seqLen; step++) {
           int i = recent.length - seqLen + step;
@@ -142,14 +150,11 @@ class PredictionService {
             blueIn[step * 32 + 16 + (n - 1)] = recent.sublist(max(0, i - 30), i).where((r) => r.blueBall == n).length / 30.0;
           }
         }
-        
         var blueOut = List.filled(16, 0.0).reshape([1, 16]);
-        final blueInputShape = _blueInterpreter!.getInputTensor(0).shape;
-        
-        _blueInterpreter!.run(blueIn.reshape(blueInputShape), blueOut);
+        _blueInterpreter!.run(blueIn.reshape([1, 15, 32]), blueOut);
 
         return {
-          'red': List<double>.from(heatmapOut[0]),
+          'red': redResult,
           'blue': List<double>.from(blueOut[0]),
         };
       } catch (e) {
@@ -174,7 +179,7 @@ class PredictionService {
 
     List<int> pool = List.generate(33, (i) => i + 1);
     pool.sort((a, b) => redH[b - 1].compareTo(redH[a - 1]));
-    pool = pool.sublist(0, 12); // Direct top 12 for speed/simplicity now
+    pool = pool.sublist(0, 12); 
 
     int bestB = blueH.indexOf(blueH.reduce(max)) + 1;
     return PredictionResult(

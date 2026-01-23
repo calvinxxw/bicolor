@@ -16,10 +16,26 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'lottery.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // Incremented version to trigger update
       onCreate: (db, version) async {
         await _createTables(db);
         await _importLocalHistory(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Add purchases table if upgrading from version 1
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS purchases (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              issue TEXT,
+              red_balls TEXT,
+              blue_balls TEXT,
+              total_cost INTEGER,
+              winning_status TEXT DEFAULT '待开奖',
+              created_at TEXT
+            )
+          ''');
+        }
       },
       onOpen: (db) async {
         final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM lottery_results'));
@@ -147,13 +163,14 @@ class DatabaseService {
     return maps.first['issue'] as String;
   }
 
-  Future<int> insertPurchase(String issue, List<int> reds, int blue) async {
+  Future<int> insertPurchase(String issue, List<int> reds, List<int> blues, int cost) async {
     final db = await database;
     return await db.insert('purchases', {
       'issue': issue,
       'red_balls': reds.join(','),
-      'blue_ball': blue,
-      'status': 0,
+      'blue_balls': blues.join(','),
+      'total_cost': cost,
+      'winning_status': '待开奖',
       'created_at': DateTime.now().toIso8601String(),
     });
   }
@@ -163,12 +180,10 @@ class DatabaseService {
     return await db.query('purchases', orderBy: 'created_at DESC');
   }
 
-  Future<void> updatePurchaseStatus(int id, int hitRed, int hitBlue) async {
+  Future<void> updatePurchaseStatus(int id, String status) async {
     final db = await database;
     await db.update('purchases', {
-      'status': 1,
-      'hit_red': hitRed,
-      'hit_blue': hitBlue,
+      'winning_status': status,
     }, where: 'id = ?', whereArgs: [id]);
   }
 }
