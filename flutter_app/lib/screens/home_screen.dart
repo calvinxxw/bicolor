@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/lottery_result.dart';
+import '../models/prediction_result.dart';
 import '../services/data_service.dart';
+import '../services/prediction_service.dart';
 import '../widgets/latest_draw_widget.dart';
 import '../widgets/draw_countdown_widget.dart';
+import '../widgets/ball_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,8 +16,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final DataService _dataService = DataService();
+  final PredictionService _predictionService = PredictionService();
   List<LotteryResult> _recentResults = [];
+  PredictionResult? _prediction;
   bool _isLoading = false;
+  bool _isPredicting = false;
   DateTime? _lastSyncTime;
 
   @override
@@ -36,6 +42,20 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _recentResults = results;
       });
+    }
+  }
+
+  Future<void> _runPrediction() async {
+    setState(() { _isPredicting = true; });
+    try {
+      final result = await _predictionService.predict();
+      setState(() { _prediction = result; });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI预测失败: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() { _isPredicting = false; });
     }
   }
 
@@ -81,6 +101,153 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _buildPredictionSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('AI 智能推荐 (12码+1)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.psychology, color: Colors.indigo),
+                onPressed: _runPrediction,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_isPredicting)
+            const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+          else if (_prediction == null)
+            Card(
+              child: InkWell(
+                onTap: _runPrediction,
+                child: const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: Text('点击运行 AI 深度学习模型', style: TextStyle(color: Colors.indigo))),
+                ),
+              ),
+            )
+          else
+            Column(
+              children: [
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 10,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            ..._prediction!.redBalls.map((p) => BallWidget(number: p.number, size: 36)),
+                            BallWidget(number: _prediction!.blueBall.number, isBlue: true, size: 36),
+                          ],
+                        ),
+                        const Divider(height: 32),
+                        const Text('AI 预测置信度热力图', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                        const SizedBox(height: 12),
+                        _buildHeatmapGrid(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeatmapGrid() {
+    if (_prediction?.redProbabilities == null) return const SizedBox();
+    
+    // Normalize probabilities for visual representation
+    double maxP = _prediction!.redProbabilities!.values.reduce((a, b) => a > b ? a : b);
+    if (maxP == 0) maxP = 1.0;
+
+    return Column(
+      children: [
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 11,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+          ),
+          itemCount: 33,
+          itemBuilder: (context, index) {
+            int num = index + 1;
+            double p = _prediction!.redProbabilities![num] ?? 0;
+            double alpha = (p / maxP).clamp(0.05, 1.0);
+            bool isTop = _prediction!.redBalls.any((b) => b.number == num);
+
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(alpha),
+                borderRadius: BorderRadius.circular(4),
+                border: isTop ? Border.all(color: Colors.black, width: 1.5) : null,
+              ),
+              child: Center(
+                child: Text(
+                  '$num',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: alpha > 0.5 ? Colors.white : Colors.black87,
+                    fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        // Blue ball heatmap
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 11,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+          ),
+          itemCount: 16,
+          itemBuilder: (context, index) {
+            int num = index + 1;
+            double p = _prediction!.blueProbabilities?[num] ?? 0;
+            double blueMax = _prediction!.blueProbabilities!.values.reduce((a, b) => a > b ? a : b);
+            double alpha = (p / (blueMax == 0 ? 1 : blueMax)).clamp(0.05, 1.0);
+            bool isTop = _prediction!.blueBall.number == num;
+
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(alpha),
+                borderRadius: BorderRadius.circular(4),
+                border: isTop ? Border.all(color: Colors.black, width: 1.5) : null,
+              ),
+              child: Center(
+                child: Text(
+                  '$num',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: alpha > 0.5 ? Colors.white : Colors.black87,
+                    fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -96,7 +263,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onRefresh: _syncData,
               lastSyncTime: _lastSyncTime,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+            _buildPredictionSection(),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Card(
@@ -114,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Padding(
               padding: EdgeInsets.only(top: 32, bottom: 24),
               child: Text(
-                '漏 2026 许迅文. All Rights Reserved.',
+                '© 2026 许迅文. All Rights Reserved.',
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),

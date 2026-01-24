@@ -77,7 +77,7 @@ class PredictionService {
       var affinity = Float32List(seqLen * 10);
 
       for (int step = 0; step < seqLen; step++) {
-        int i = recent.length - seqLen + step;
+        int i = recent.length - seqLen + step + 1;
         List<int> prevReds = List<int>.from(recent[i - 1].redBalls)..sort();
 
         for (int n = 1; n <= 33; n++) {
@@ -177,14 +177,27 @@ class PredictionService {
 
     if (redH.every((v) => v == 0)) throw Exception("AI输出无效");
 
+    Map<int, double> redProbMap = {};
+    for (int i = 0; i < redH.length; i++) {
+      redProbMap[i + 1] = redH[i];
+    }
+
+    Map<int, double> blueProbMap = {};
+    for (int i = 0; i < blueH.length; i++) {
+      blueProbMap[i + 1] = blueH[i];
+    }
+
     List<int> pool = List.generate(33, (i) => i + 1);
     pool.sort((a, b) => redH[b - 1].compareTo(redH[a - 1]));
-    pool = pool.sublist(0, 12); 
+    List<int> top12 = pool.sublist(0, 12); 
 
     int bestB = blueH.indexOf(blueH.reduce(max)) + 1;
+    
     return PredictionResult(
-      redBalls: (pool..sort()).map((n) => BallPrediction(number: n, confidence: redH[n - 1])).toList(),
+      redBalls: (top12..sort()).map((n) => BallPrediction(number: n, confidence: redH[n - 1])).toList(),
       blueBall: BallPrediction(number: bestB, confidence: blueH[bestB - 1]),
+      redProbabilities: redProbMap,
+      blueProbabilities: blueProbMap,
     );
   }
 

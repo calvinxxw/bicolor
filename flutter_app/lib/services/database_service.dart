@@ -186,4 +186,9 @@ class DatabaseService {
       'winning_status': status,
     }, where: 'id = ?', whereArgs: [id]);
   }
+
+  Future<void> deletePurchase(int id) async {
+    final db = await database;
+    await db.delete('purchases', where: 'id = ?', whereArgs: [id]);
+  }
 }

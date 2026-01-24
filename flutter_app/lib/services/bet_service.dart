@@ -80,6 +80,10 @@ class BetService {
     await getPurchaseHistory(); // This method already triggers verification for all pending
   }
 
+  Future<void> deletePurchase(int id) async {
+    await _db.deletePurchase(id);
+  }
+
   // --- Calculator Methods ---
 
   List<BetCombination> generateCombinationsPage(BetSelection selection, int page, int pageSize) {

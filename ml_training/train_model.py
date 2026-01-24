@@ -110,10 +110,34 @@ def train():
         y_r.append(target)
     
     X_e, X_b, X_r, y_r = np.array(X_e), np.array(X_b), np.array(X_r), np.array(y_r)
+    
+    # Split data: Use 90% for training, 10% for validation
+    split_idx = int(len(y_r) * 0.9)
+    train_inputs = [X_e[:split_idx], X_b[:split_idx], X_r[:split_idx]]
+    train_targets = {'out_heatmap': y_r[:split_idx], 'out_zones': np.zeros((split_idx, 3))}
+    val_inputs = [X_e[split_idx:], X_b[split_idx:], X_r[split_idx:]]
+    val_targets = {'out_heatmap': y_r[split_idx:], 'out_zones': np.zeros((len(y_r) - split_idx, 3))}
+
     red_model = build_ensemble_red_model(seq_len, 99, 10, 10)
-    red_model.fit([X_e, X_b, X_r], {'out_heatmap': y_r, 'out_zones': np.zeros((len(y_r), 3))}, epochs=100, batch_size=32, verbose=1)
+    
+    # Use EarlyStopping and ModelCheckpoint to get the best generalizable model
+    callbacks = [
+        keras.callbacks.EarlyStopping(monitor='val_out_heatmap_loss', patience=15, restore_best_weights=True, mode='min'),
+        keras.callbacks.ReduceLROnPlateau(monitor='val_out_heatmap_loss', factor=0.5, patience=5, mode='min')
+    ]
+    
+    print(f"Training on {split_idx} samples, validating on {len(y_r) - split_idx}...")
+    red_model.fit(
+        train_inputs, 
+        train_targets, 
+        validation_data=(val_inputs, val_targets),
+        epochs=150, 
+        batch_size=32, 
+        callbacks=callbacks,
+        verbose=1
+    )
     red_model.save('red_ball_model.keras')
-    print("Output Alignment Complete.")
+    print("Output Alignment Complete (with Validation).")
 
 if __name__ == '__main__':
     train()
