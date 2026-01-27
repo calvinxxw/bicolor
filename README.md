@@ -7,42 +7,38 @@ An automated end-to-end lottery prediction system using XGBoost, featuring a dua
 This project implements a fully automated pipeline that bridges machine learning training on GitHub Cloud with real-time inference on a Flutter mobile application.
 
 ### 1. Automated Training Pipeline (GitHub Actions)
-The "brain" of the system resides in GitHub Actions. Every Tuesday, Thursday, and Sunday (following the official draws), a virtual server:
-*   **Crawls:** Fetches the latest draw data via `data_crawler.py`.
-*   **Feature Engineering:** Calculates high-precision Gap, Frequency, and Momentum features.
-*   **Dual-Window Training:**
-    *   **Red Balls (Window: 50):** Optimized for short-term "hot" trends and recent structural patterns (found to be the most effective in backtesting).
-    *   **Blue Ball (Window: 1000):** Optimized for long-term statistical stability.
-*   **Conversion:** Converts trained XGBoost models into **ONNX** format for cross-platform compatibility.
-*   **Deployment:** Commits the new models back to the repository automatically.
+The "brain" of the system resides in GitHub Actions. To ensure data accuracy, retraining is scheduled **12 hours after every draw**.
+*   **Schedule:** Monday, Wednesday, and Friday at **09:15 AM (Beijing Time)**.
+*   **Workflow:**
+    *   **Crawls:** Fetches the latest draw data via `data_crawler.py`.
+    *   **Dual-Window Training:**
+        *   **Red Balls (Window: 50):** Focused on high-sensitivity recent trends (48.0% 3+ hit rate).
+        *   **Blue Ball (Window: 1000):** Optimized for long-term statistical stability (6.0% hit rate).
+    *   **ONNX Export:** Models are converted to `.onnx` for mobile efficiency.
+    *   **Auto-Commit:** The system pushes updated models and `ssq_data.csv` back to the repository.
 
 ### 2. Mobile Synchronization
 The Flutter application features an **"OTA (Over-The-Air) Model Sync"** capability:
-*   **Cloud Pull:** Users can trigger a model update by tapping the ☁️ icon.
-*   **Dynamic Loading:** The app downloads the latest `.onnx` models from GitHub's raw storage to the phone's internal memory.
-*   **Priority Engine:** The AI engine automatically detects and prioritizes the custom-trained models over the default bundled ones.
+*   **One-Tap Sync:** Users update the model via the ☁️ icon in the top bar.
+*   **Default Cloud Link:** Pre-configured to pull from this repository's `main` branch.
+*   **Dynamic Loading:** Models are stored locally on the phone and prioritized by the AI engine.
 
-## 🛠 Tech Stack
-*   **ML Core:** Python, XGBoost, Scikit-learn
-*   **Model Format:** ONNX (Open Neural Network Exchange)
-*   **Mobile:** Flutter (Dart), ONNX Runtime
-*   **Automation:** GitHub Actions
+## 📈 ML Performance Analysis
+Based on backtesting the latest 100 draws (comparing different window sizes):
 
-## 📈 Backtest Performance (Recent 100 Draws)
-| Metric | 50-Draw Window | 1000-Draw Window |
-| :--- | :--- | :--- |
-| **Red 3+ Hit Rate** | **48.0%** | 41.0% |
-| **Red 4+ Hit Rate** | **22.0%** | 9.0% |
-| **Blue Ball Hit Rate** | 4.0% | **6.0%** |
+| Window Size | Red 3+ % | Red 4+ % | Blue % |
+| :--- | :--- | :--- | :--- |
+| 1000 | 41.0 | 9.0 | **6.0** |
+| 100 | 47.0 | 15.0 | 3.0 |
+| **50 (Selected for Red)** | **48.0** | **22.0** | 4.0 |
+| 10 | 40.0 | 14.0 | 4.0 |
 
-*Note: The system automatically combines the best windows (Red: 50, Blue: 1000) for the final prediction.*
+*Theoretical Random Expectation (12 picks): ~37.4% for Red 3+.*
 
-## 📋 Installation & Usage
-1.  **Retrain Manually:** Go to the "Actions" tab in this repo and run the "Retrain Lottery Model" workflow.
-2.  **App Sync:**
-    *   Open the app on your phone.
-    *   Tap the **Cloud Download** icon in the AppBar.
-    *   Click **"立即同步"** to fetch the latest cloud-optimized models.
+## 📋 Quick Start
+1.  **Repository Setup:** Ensure GitHub Action has **Read and write permissions** in Settings -> Actions -> General.
+2.  **App Update:** Tap the cloud icon in the app to sync the latest trained "brain".
+3.  **Manual Trigger:** You can manually start retraining in the "Actions" tab on GitHub.
 
 ---
-**Disclaimer:** This project is for educational and research purposes only. Lottery involves risk; the AI model provides predictions based on statistical trends but does not guarantee results.
+**Disclaimer:** Educational research project. Lottery involves risk; predictions are statistical trends, not guarantees.
