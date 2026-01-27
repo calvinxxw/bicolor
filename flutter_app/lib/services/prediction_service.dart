@@ -7,6 +7,10 @@ import '../models/lottery_result.dart';
 import '../models/prediction_result.dart';
 import 'data_service.dart';
 
+import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+
 class PredictionService {
   static final PredictionService _instance = PredictionService._internal();
   factory PredictionService() => _instance;
@@ -18,30 +22,63 @@ class PredictionService {
   final _lock = Lock();
 
   final DataService _dataService = DataService();
+  final Dio _dio = Dio();
 
   Future<void> init() async {
     await _lock.synchronized(() async {
       if (_isLoaded) return;
       try {
-        print("PredictionService: Loading XGBoost-ONNX Models...");
-        
-        // Initialize ONNX Runtime Environment
+        print("PredictionService: Initializing AI Engine...");
         OrtEnv.instance.init();
         
-        final redModelData = await rootBundle.load('assets/models/red_ball_xgb.onnx');
-        final blueModelData = await rootBundle.load('assets/models/blue_ball_xgb.onnx');
+        final docDir = await getApplicationDocumentsDirectory();
+        final redFile = File('${docDir.path}/red_ball_xgb.onnx');
+        final blueFile = File('${docDir.path}/blue_ball_xgb.onnx');
+
+        Uint8List redData;
+        Uint8List blueData;
+
+        if (await redFile.exists() && await blueFile.exists()) {
+          print("PredictionService: Loading Custom Trained Models from Storage");
+          redData = await redFile.readAsBytes();
+          blueData = await blueFile.readAsBytes();
+        } else {
+          print("PredictionService: Loading Default Bundled Models");
+          final rBundle = await rootBundle.load('assets/models/red_ball_xgb.onnx');
+          final bBundle = await rootBundle.load('assets/models/blue_ball_xgb.onnx');
+          redData = rBundle.buffer.asUint8List();
+          blueData = bBundle.buffer.asUint8List();
+        }
 
         final sessionOptions = OrtSessionOptions();
-        
-        _redSession = OrtSession.fromBuffer(redModelData.buffer.asUint8List(), sessionOptions);
-        _blueSession = OrtSession.fromBuffer(blueModelData.buffer.asUint8List(), sessionOptions);
+        _redSession = OrtSession.fromBuffer(redData, sessionOptions);
+        _blueSession = OrtSession.fromBuffer(blueData, sessionOptions);
         
         _isLoaded = true;
-        print("PredictionService: XGBoost-ONNX Model Active.");
       } catch (e) {
-        print("PredictionService: Critical Load Error: $e");
+        print("PredictionService: Load Error: $e");
       }
     });
+  }
+
+  Future<bool> syncModels(String baseUrl) async {
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      print("PredictionService: Syncing models from $baseUrl...");
+      
+      await _dio.download("$baseUrl/red_ball_xgb.onnx", '${docDir.path}/red_ball_xgb.onnx');
+      await _dio.download("$baseUrl/blue_ball_xgb.onnx", '${docDir.path}/blue_ball_xgb.onnx');
+      
+      // Reload sessions
+      _isLoaded = false;
+      _redSession?.release();
+      _blueSession?.release();
+      await init();
+      return true;
+    } catch (e) {
+      print("PredictionService: Sync Failed: $e");
+      return false;
+    }
   }
 
   int _calculateAC(List<int> reds) {
@@ -59,12 +96,16 @@ class PredictionService {
     if (!_isLoaded) throw Exception("AI引擎加载失败");
 
     return await _lock.synchronized(() async {
-      List<LotteryResult> history = await _dataService.getRecentResults(60);
-      if (history.length < 45) {
+      // Need at least 1000 + 15 history results for the windows
+      List<LotteryResult> history = await _dataService.getRecentResults(1100);
+      if (history.length < 1015) {
         await _dataService.syncData();
-        history = await _dataService.getRecentResults(60);
+        history = await _dataService.getRecentResults(1100);
       }
-      if (history.length < 45) throw Exception("历史数据不足(${history.length})");
+      if (history.length < 1015) {
+        // Fallback for blue ball features if history is short, but warn
+        print("PredictionService: Warning: Limited history (${history.length})");
+      }
 
       const int seqLen = 15;
       final recent = history.reversed.toList();

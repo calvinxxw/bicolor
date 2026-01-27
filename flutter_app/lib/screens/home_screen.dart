@@ -247,46 +247,95 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _syncModel() async {
+    final controller = TextEditingController(text: "http://192.168.1.100:8000"); // Default example
+    
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('同步模型 (Dual-Window)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('请输入模型服务器地址(包含http://)'),
+            TextField(controller: controller, decoration: const InputDecoration(hintText: "URL")),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('开始同步')),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isLoading = true);
+      final success = await _predictionService.syncModels(controller.text);
+      setState(() => _isLoading = false);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? '模型同步成功' : '模型同步失败，请检查网络和服务器地址'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: () => _syncData(),
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: Column(
-          children: [
-            const DrawCountdownWidget(),
-            LatestDrawWidget(
-              results: _recentResults,
-              isLoading: _isLoading,
-              onRefresh: () => _syncData(),
-              lastSyncTime: _lastSyncTime,
-            ),
-            const SizedBox(height: 24),
-            _buildPredictionSection(),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Card(
-                child: ListTile(
-                  leading: const Icon(Icons.history),
-                  title: const Text('历史开奖'),
-                  subtitle: const Text('查看所有历史开奖记录'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pushNamed(context, '/history');
-                  },
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('双色球智能预测'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_download),
+            tooltip: '同步AI模型',
+            onPressed: _syncModel,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _syncData(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              const DrawCountdownWidget(),
+              LatestDrawWidget(
+                results: _recentResults,
+                isLoading: _isLoading,
+                onRefresh: () => _syncData(),
+                lastSyncTime: _lastSyncTime,
+              ),
+              const SizedBox(height: 24),
+              _buildPredictionSection(),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.history),
+                    title: const Text('历史开奖'),
+                    subtitle: const Text('查看所有历史开奖记录'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/history');
+                    },
+                  ),
                 ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.only(top: 32, bottom: 24),
-              child: Text(
-                '© 2026 许迅文. All Rights Reserved.',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
+              const Padding(
+                padding: EdgeInsets.only(top: 32, bottom: 24),
+                child: Text(
+                  '© 2026 许迅文. All Rights Reserved.',
+                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

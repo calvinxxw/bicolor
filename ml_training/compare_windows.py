@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-from sklearn.multioutput import MultiOutputClassifier
-from sklearn.metrics import classification_report
 import joblib
 import os
 
@@ -89,28 +87,24 @@ def prepare_blue_features(df):
             
     return np.clip(blue_gaps / 50.0, 0, 1), blue_freqs
 
-def train():
-    print("Loading data...")
-    df = pd.read_csv('ssq_data.csv').sort_values('issue').reset_index(drop=True)
-    
-    # Red Window: 50
-    red_window_size = 50
-    print(f"Applying red window-based training: using last {red_window_size} draws.")
-    df_red = df.tail(red_window_size + 15).copy().reset_index(drop=True)
-    rg, rf, m, rs, ra = calculate_features(df_red)
-    
-    # Blue Window: 1000
-    blue_window_size = 1000
-    print(f"Applying blue window-based training: using last {blue_window_size} draws.")
-    df_blue = df.tail(blue_window_size + 15).copy().reset_index(drop=True)
-    bg, bf = prepare_blue_features(df_blue)
-    
+def evaluate_window(window_size, test_count=100):
     seq_len = 15
+    df = pd.read_csv('ml_training/ssq_data.csv').sort_values('issue').reset_index(drop=True)
+    
+    # We want the latest test_count for testing.
+    # The training window size is window_size.
+    # We need seq_len draws before the first training sample for features.
+    total_needed = window_size + test_count + seq_len
+    df_sub = df.tail(total_needed).copy().reset_index(drop=True)
+    
+    rg, rf, m, rs, ra = calculate_features(df_sub)
+    bg, bf = prepare_blue_features(df_sub)
+    
     X_red, y_red_expanded = [], []
     X_blue, y_blue = [], []
     
-    # Process Red
-    for i in range(seq_len, len(df_red)):
+    # training range: from seq_len to seq_len + window_size
+    for i in range(seq_len, seq_len + window_size):
         red_feat = []
         for step in range(i - seq_len, i):
             red_feat.extend(rg[step])
@@ -119,20 +113,18 @@ def train():
             red_feat.extend(rs[step])
             red_feat.extend(ra[step])
         
-        for val in df_red[['red1','red2','red3','red4','red5','red6']].values[i]:
+        for val in df_sub[['red1','red2','red3','red4','red5','red6']].values[i]:
             X_red.append(red_feat)
             y_red_expanded.append(int(val) - 1)
-
-    # Process Blue
-    for i in range(seq_len, len(df_blue)):
+            
         blue_feat = []
         for step in range(i - seq_len, i):
             blue_feat.extend(bg[step])
             blue_feat.extend(bf[step])
         X_blue.append(blue_feat)
-        y_blue.append(int(df_blue.iloc[i]['blue']) - 1)
-        
-    # Ensure all classes are present for small windows
+        y_blue.append(int(df_sub.iloc[i]['blue']) - 1)
+    
+    # Add dummy samples to ensure all classes exist
     for c in range(33):
         if c not in y_red_expanded:
             X_red.append(np.zeros(len(X_red[0])))
@@ -141,44 +133,68 @@ def train():
         if c not in y_blue:
             X_blue.append(np.zeros(len(X_blue[0])))
             y_blue.append(c)
-
+        
     X_red, y_red_expanded = np.array(X_red), np.array(y_red_expanded)
     X_blue, y_blue = np.array(X_blue), np.array(y_blue)
     
-    print(f"Red samples: {X_red.shape}, Blue samples: {X_blue.shape}")
-    
-    # Train Red Model
-    print("Training Red Ball XGBoost Model (Window: 50)...")
-    red_xgb = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='multi:softprob',
-        num_class=33,
-        tree_method='hist',
-        random_state=42
-    )
+    # Train
+    red_xgb = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, 
+                                 objective='multi:softprob', num_class=33, tree_method='hist', random_state=42)
     red_xgb.fit(X_red, y_red_expanded)
     
-    # Train Blue Model
-    print("Training Blue Ball XGBoost Model (Window: 1000)...")
-    blue_xgb = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='multi:softprob',
-        num_class=16,
-        tree_method='hist',
-        random_state=42
-    )
+    # Fix for missing classes in blue ball training
+    blue_xgb = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, 
+                                  objective='multi:softprob', num_class=16, tree_method='hist', random_state=42)
+    
+    # Ensure y_blue is treated as having classes 0-15
+    # XGBoost needs all classes to be present or it might fail if they aren't contiguous starting from 0
+    # Actually, the error shows it expected [0..14] but got a different set. 
+    # Let's ensure the model knows there are 16 classes.
     blue_xgb.fit(X_blue, y_blue)
+    hit_4_plus = 0
+    hit_3 = 0
+    blue_hits = 0
     
-    # Save models
-    print("Saving models...")
-    joblib.dump(red_xgb, 'red_ball_xgb.joblib')
-    joblib.dump(blue_xgb, 'blue_ball_xgb.joblib')
-    
-    print("Done!")
+    for i in range(len(df_sub) - test_count, len(df_sub)):
+        # Red
+        red_feat = []
+        for step in range(i - seq_len, i):
+            red_feat.extend(rg[step])
+            red_feat.extend(rf[step])
+            red_feat.extend(m[step])
+            red_feat.extend(rs[step])
+            red_feat.extend(ra[step])
+        red_probs = red_model_probs = red_xgb.predict_proba(np.array([red_feat]))[0]
+        top_12 = np.argsort(red_probs)[-12:] + 1
+        actual_reds = set(df_sub.iloc[i][['red1', 'red2', 'red3', 'red4', 'red5', 'red6']].values)
+        hits = len(actual_reds & set(top_12))
+        
+        # Blue
+        blue_feat = []
+        for step in range(i - seq_len, i):
+            blue_feat.extend(bg[step])
+            blue_feat.extend(bf[step])
+        blue_probs = blue_xgb.predict_proba(np.array([blue_feat]))[0]
+        pred_blue = np.argmax(blue_probs) + 1
+        if pred_blue == int(df_sub.iloc[i]['blue']):
+            blue_hits += 1
+            
+        if hits >= 4: hit_4_plus += 1
+        elif hits == 3: hit_3 += 1
+            
+    return {
+        'window': window_size,
+        'red_3_plus': (hit_4_plus + hit_3) / test_count * 100,
+        'red_4_plus': hit_4_plus / test_count * 100,
+        'blue_hit': blue_hits / test_count * 100
+    }
 
 if __name__ == '__main__':
-    train()
+    windows = [1000, 500, 200, 100, 50, 20, 10]
+    results = []
+    print(f"{'Window':<10} | {'Red 3+ %':<10} | {'Red 4+ %':<10} | {'Blue %':<10}")
+    print("-" * 50)
+    for w in windows:
+        res = evaluate_window(w)
+        results.append(res)
+        print(f"{res['window']:<10} | {res['red_3_plus']:<10.1f} | {res['red_4_plus']:<10.1f} | {res['blue_hit']:<10.1f}")

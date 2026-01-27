@@ -5,8 +5,8 @@ import xgboost as xgb
 import joblib
 from data_crawler import fetch_full_ssq_data
 from train_xgboost import calculate_features, prepare_blue_features
-import onnxmltools
-from onnxmltools.convert.common.data_types import FloatTensorType
+# import onnxmltools
+# from onnxmltools.convert.common.data_types import FloatTensorType
 
 def incremental_update():
     # 1. Fetch the latest data
@@ -16,28 +16,37 @@ def incremental_update():
         if df_new is None:
             raise Exception("Crawler returned None")
         
-        df_old = pd.read_csv('ssq_data.csv')
+        csv_path = os.path.join(os.path.dirname(__file__), 'ssq_data.csv')
+        df_old = pd.read_csv(csv_path)
         
         df_combined = pd.concat([df_new, df_old]).drop_duplicates(subset=['issue'])
         df_combined['issue'] = df_combined['issue'].astype(int)
         df_combined = df_combined.sort_values('issue').reset_index(drop=True)
-        df_combined.to_csv('ssq_data.csv', index=False)
+        df_combined.to_csv(csv_path, index=False)
         print(f"Dataset updated. Total records: {len(df_combined)}")
     except Exception as e:
         print(f"Crawl failed: {e}")
         return
 
     # 2. Prepare Features
-    print("Step 2: Calculating features for retraining...")
-    rg, rf, m, rs, ra = calculate_features(df_combined)
-    bg, bf = prepare_blue_features(df_combined)
+    print("Step 2: Preparing features with dual windows (Red: 50, Blue: 1000)...")
+    
+    # Red Training
+    red_window_size = 50
+    df_red = df_combined.tail(red_window_size + 15).copy().reset_index(drop=True)
+    rg, rf, m, rs, ra = calculate_features(df_red)
+    
+    # Blue Training
+    blue_window_size = 1000
+    df_blue = df_combined.tail(blue_window_size + 15).copy().reset_index(drop=True)
+    bg, bf = prepare_blue_features(df_blue)
     
     seq_len = 15
     X_red, y_red = [], []
     X_blue, y_blue = [], []
     
-    # We retrain on the whole thing or just a large window because XGBoost is fast
-    for i in range(seq_len, len(df_combined)):
+    # Red features
+    for i in range(seq_len, len(df_red)):
         red_feat = []
         for step in range(i - seq_len, i):
             red_feat.extend(rg[step])
@@ -45,33 +54,31 @@ def incremental_update():
             red_feat.extend(m[step])
             red_feat.extend(rs[step])
             red_feat.extend(ra[step])
-        X_red.append(red_feat)
-        
-        # Red targets (simplified approach: expanded for training)
-        # For incremental, maybe we just want to train on the latest ones?
-        # But XGBoost is so fast we can just retrain the expanded dataset.
-        
-    # For red balls, we'll expand the dataset like in train_xgboost.py
-    X_red_expanded = []
-    y_red_expanded = []
-    for i in range(len(X_red)):
-        for val in df_combined[['red1','red2','red3','red4','red5','red6']].values[i+seq_len]:
-            X_red_expanded.append(X_red[i])
-            y_red_expanded.append(int(val) - 1)
+        for val in df_red[['red1','red2','red3','red4','red5','red6']].values[i]:
+            X_red.append(red_feat)
+            y_red.append(int(val) - 1)
             
-    X_red_expanded = np.array(X_red_expanded)
-    y_red_expanded = np.array(y_red_expanded)
-
-    for i in range(seq_len, len(df_combined)):
+    # Blue features
+    for i in range(seq_len, len(df_blue)):
         blue_feat = []
         for step in range(i - seq_len, i):
             blue_feat.extend(bg[step])
             blue_feat.extend(bf[step])
         X_blue.append(blue_feat)
-        y_blue.append(int(df_combined.iloc[i]['blue']) - 1)
+        y_blue.append(int(df_blue.iloc[i]['blue']) - 1)
         
-    X_blue = np.array(X_blue)
-    y_blue = np.array(y_blue)
+    # Ensure all classes are present
+    for c in range(33):
+        if c not in y_red:
+            X_red.append(np.zeros(len(X_red[0])))
+            y_red.append(c)
+    for c in range(16):
+        if c not in y_blue:
+            X_blue.append(np.zeros(len(X_blue[0])))
+            y_blue.append(c)
+
+    X_red, y_red = np.array(X_red), np.array(y_red)
+    X_blue, y_blue = np.array(X_blue), np.array(y_blue)
 
     # 3. Retrain Models
     print("Step 3: Retraining XGBoost models...")
@@ -86,7 +93,7 @@ def incremental_update():
         tree_method='hist',
         random_state=42
     )
-    red_xgb.fit(X_red_expanded, y_red_expanded)
+    red_xgb.fit(X_red, y_red)
     joblib.dump(red_xgb, 'red_ball_xgb.joblib')
     print("Red Model Retrained.")
 
@@ -104,36 +111,39 @@ def incremental_update():
     joblib.dump(blue_xgb, 'blue_ball_xgb.joblib')
     print("Blue Model Retrained.")
 
-    # 4. Export to ONNX
-    print("Step 4: Exporting to ONNX...")
-    
-    # Use skl2onnx/onnxmltools conversion logic
-    import skl2onnx
-    from onnxmltools.convert.xgboost.operator_converters.XGBoost import convert_xgboost
-    from onnxmltools.convert.xgboost.shape_calculators.Classifier import calculate_xgboost_classifier_output_shapes
-    
-    skl2onnx.update_registered_converter(
-        xgb.XGBClassifier, 'XGBClassifier',
-        calculate_xgboost_classifier_output_shapes, convert_xgboost,
-        options={'zipmap': [True, False, 'columns'], 'nocl': [True, False]}
-    )
+    # 4. Export to ONNX and Deploy
+    print("Step 4: Exporting to ONNX and Deploying to App...")
+    import onnxmltools
+    from onnxmltools.convert.common.data_types import FloatTensorType
+    import shutil
 
-    onx_red = skl2onnx.convert_sklearn(red_xgb, initial_types=[('input', FloatTensorType([None, 1785]))],
-                                      target_opset=12, options={'zipmap': False})
+    # Convert Red
+    initial_type_red = [('input', FloatTensorType([None, 1785]))]
+    onx_red = onnxmltools.convert_xgboost(red_xgb, initial_types=initial_type_red, target_opset=12)
     with open("red_ball_xgb.onnx", "wb") as f:
         f.write(onx_red.SerializeToString())
 
-    onx_blue = skl2onnx.convert_sklearn(blue_xgb, initial_types=[('input', FloatTensorType([None, 480]))],
-                                        target_opset=12, options={'zipmap': False})
+    # Convert Blue
+    initial_type_blue = [('input', FloatTensorType([None, 480]))]
+    onx_blue = onnxmltools.convert_xgboost(blue_xgb, initial_types=initial_type_blue, target_opset=12)
     with open("blue_ball_xgb.onnx", "wb") as f:
         f.write(onx_blue.SerializeToString())
+
+    # Copy to Flutter assets
+    # In GitHub Actions, the flutter_app dir exists, but we mainly want the file 
+    # to be committed to ml_training/ so the app can download it via raw URL.
+    asset_dir = os.path.join(os.path.dirname(__file__), '../flutter_app/assets/models/')
+    if os.path.exists(asset_dir):
+        shutil.copy("red_ball_xgb.onnx", os.path.join(asset_dir, "red_ball_xgb.onnx"))
+        shutil.copy("blue_ball_xgb.onnx", os.path.join(asset_dir, "blue_ball_xgb.onnx"))
+        print(f"Models deployed to {asset_dir}")
+    else:
+        print("Note: Flutter asset directory not found locally (expected in CI).")
     
-    # Copy to assets
-    import shutil
-    shutil.copy("red_ball_xgb.onnx", "../flutter_app/assets/models/red_ball_xgb.onnx")
-    shutil.copy("blue_ball_xgb.onnx", "../flutter_app/assets/models/blue_ball_xgb.onnx")
+    # Also ensure they are in the current dir for git add
+    print("Models saved in ml_training/ for GitHub versioning.")
     
-    print("Incremental Update Complete! Models deployed to Flutter.")
+    print("Incremental Update Complete!")
 
 if __name__ == '__main__':
     incremental_update()

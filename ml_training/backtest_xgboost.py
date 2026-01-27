@@ -89,12 +89,12 @@ def prepare_blue_features(df):
 
 def run_backtest():
     print("Executing XGBoost Backtest...")
-    df = pd.read_csv('ssq_data.csv').sort_values('issue').reset_index(drop=True)
+    df = pd.read_csv('ml_training/ssq_data.csv').sort_values('issue').reset_index(drop=True)
     rg, rf, m, rs, ra = calculate_features(df)
     bg, bf = prepare_blue_features(df)
     
-    red_model = joblib.load('red_ball_xgb.joblib')
-    blue_model = joblib.load('blue_ball_xgb.joblib')
+    red_model = joblib.load('ml_training/red_ball_xgb.joblib')
+    blue_model = joblib.load('ml_training/blue_ball_xgb.joblib')
     
     seq_len = 15
     test_count = 50
@@ -118,8 +118,8 @@ def run_backtest():
         
         X_red = np.array([red_feat])
         red_probs = red_model.predict_proba(X_red)
-        # red_probs is a list of 33 arrays of shape (1, 2)
-        heatmap = np.array([p[0, 1] for p in red_probs])
+        # red_probs is (1, 33) for multi:softprob
+        heatmap = red_probs[0]
         
         top_12 = np.argsort(heatmap)[-12:] + 1
         actual_reds = set(df.iloc[i][['red1', 'red2', 'red3', 'red4', 'red5', 'red6']].values)

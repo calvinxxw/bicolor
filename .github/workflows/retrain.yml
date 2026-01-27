@@ -1,0 +1,44 @@
+name: Retrain Lottery Model
+
+on:
+  schedule:
+    # SSQ draws are Tue, Thu, Sun at 21:15 Beijing Time (13:15 UTC)
+    # We run it at 14:00 UTC (22:00 Beijing Time) to ensure data is published.
+    - cron: '0 14 * * 0,2,4'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Allows pushing the updated model back to repo
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy xgboost requests beautifulsoup4 joblib onnxmltools onnxruntime skl2onnx
+
+      - name: Run Incremental Update
+        run: |
+          # Run the update script. 
+          # It will fetch data, retrain 50/1000 windows, and save .onnx files.
+          python ml_training/incremental_update.py
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add ml_training/ssq_data.csv
+          git add ml_training/*.joblib
+          git add ml_training/*.onnx
+          git commit -m "Auto-retrain model: $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+          git push
