@@ -248,22 +248,35 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _syncModel() async {
-    final controller = TextEditingController(text: "http://192.168.1.100:8000"); // Default example
+    const String defaultUrl = "https://raw.githubusercontent.com/calvinxxw/bicolor/main/ml_training";
+    final controller = TextEditingController(text: defaultUrl);
     
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('同步模型 (Dual-Window)'),
+        title: const Text('同步云端模型'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('请输入模型服务器地址(包含http://)'),
-            TextField(controller: controller, decoration: const InputDecoration(hintText: "URL")),
+            const Text('将从 GitHub 获取最新的 AI 模型 (50/1000 双窗口版)', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: '服务器地址',
+                border: OutlineInputBorder(),
+              ),
+            ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('开始同步')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+            child: const Text('立即同步'),
+          ),
         ],
       ),
     );
