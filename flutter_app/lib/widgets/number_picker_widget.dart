@@ -8,6 +8,7 @@ class NumberPickerWidget extends StatelessWidget {
   final Set<int>? aiRecommendedNumbers;
   final List<double>? probabilities;
   final Function(int) onNumberTap;
+  final String? subtitle;
 
   const NumberPickerWidget({
     super.key,
@@ -16,6 +17,7 @@ class NumberPickerWidget extends StatelessWidget {
     this.aiRecommendedNumbers,
     this.probabilities,
     required this.onNumberTap,
+    this.subtitle,
   });
 
   @override
@@ -23,9 +25,9 @@ class NumberPickerWidget extends StatelessWidget {
     final maxNumber = ballType == BallType.red ? 33 : 16;
     final color = ballType == BallType.red ? Colors.red : Colors.blue;
     final title = ballType == BallType.red ? '红球' : '蓝球';
-    final subtitle = ballType == BallType.red
+    final displaySubtitle = subtitle ?? (ballType == BallType.red
         ? '请选择6-20个红球 (已选${selectedNumbers.length}个)'
-        : '请选择1-16个蓝球 (已选${selectedNumbers.length}个)';
+        : '请选择1-16个蓝球 (已选${selectedNumbers.length}个)');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,7 +41,7 @@ class NumberPickerWidget extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          subtitle,
+          displaySubtitle,
           style: TextStyle(
             fontSize: 14,
             color: Colors.grey[600],

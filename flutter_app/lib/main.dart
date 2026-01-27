@@ -4,6 +4,7 @@ import 'screens/history_screen.dart';
 import 'screens/manual_selection_screen.dart';
 import 'screens/bet_calculator_screen.dart';
 import 'screens/backtest_screen.dart';
+import 'screens/manual_entry_screen.dart';
 import 'models/bet_selection.dart';
 
 void main() {
@@ -26,6 +27,10 @@ class MyApp extends StatelessWidget {
         if (settings.name == '/history') {
           return MaterialPageRoute(
             builder: (context) => const HistoryScreen(),
+          );
+        } else if (settings.name == '/manual-entry') {
+          return MaterialPageRoute(
+            builder: (context) => const ManualEntryScreen(),
           );
         } else if (settings.name == '/bet-calculator') {
           final selection = settings.arguments as BetSelection;

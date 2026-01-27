@@ -61,6 +61,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: const Text('历史开奖'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.pushNamed(context, '/manual-entry');
+          if (result == true) {
+            _loadHistory();
+          }
+        },
+        tooltip: '手动录入',
+        child: const Icon(Icons.add),
+      ),
       body: _isLoading
           ? const Center(
               child: Column(
