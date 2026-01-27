@@ -35,10 +35,19 @@ jobs:
 
       - name: Commit and Push Changes
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # Add only relevant files
           git add ml_training/ssq_data.csv
           git add ml_training/*.joblib
           git add ml_training/*.onnx
-          git commit -m "Auto-retrain model: $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
-          git push
+          
+          # Check if there are actual changes staged
+          if git diff --staged --quiet; then
+            echo "No changes detected. Skipping commit."
+          else
+            git commit -m "Auto-retrain model: $(date +'%Y-%m-%d %H:%M')"
+            # Push using the built-in GITHUB_TOKEN for authentication
+            git push origin main
+          fi
