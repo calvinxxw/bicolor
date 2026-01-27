@@ -82,6 +82,7 @@ def incremental_update():
 
     # 3. Retrain Models
     print("Step 3: Retraining XGBoost models...")
+    base_path = os.path.dirname(__file__)
     
     # Red Model
     red_xgb = xgb.XGBClassifier(
@@ -94,7 +95,7 @@ def incremental_update():
         random_state=42
     )
     red_xgb.fit(X_red, y_red)
-    joblib.dump(red_xgb, 'red_ball_xgb.joblib')
+    joblib.dump(red_xgb, os.path.join(base_path, 'red_ball_xgb.joblib'))
     print("Red Model Retrained.")
 
     # Blue Model
@@ -108,7 +109,7 @@ def incremental_update():
         random_state=42
     )
     blue_xgb.fit(X_blue, y_blue)
-    joblib.dump(blue_xgb, 'blue_ball_xgb.joblib')
+    joblib.dump(blue_xgb, os.path.join(base_path, 'blue_ball_xgb.joblib'))
     print("Blue Model Retrained.")
 
     # 4. Export to ONNX and Deploy
@@ -120,22 +121,22 @@ def incremental_update():
     # Convert Red
     initial_type_red = [('input', FloatTensorType([None, 1785]))]
     onx_red = onnxmltools.convert_xgboost(red_xgb, initial_types=initial_type_red, target_opset=12)
-    with open("red_ball_xgb.onnx", "wb") as f:
+    red_onnx_path = os.path.join(base_path, "red_ball_xgb.onnx")
+    with open(red_onnx_path, "wb") as f:
         f.write(onx_red.SerializeToString())
 
     # Convert Blue
     initial_type_blue = [('input', FloatTensorType([None, 480]))]
     onx_blue = onnxmltools.convert_xgboost(blue_xgb, initial_types=initial_type_blue, target_opset=12)
-    with open("blue_ball_xgb.onnx", "wb") as f:
+    blue_onnx_path = os.path.join(base_path, "blue_ball_xgb.onnx")
+    with open(blue_onnx_path, "wb") as f:
         f.write(onx_blue.SerializeToString())
 
     # Copy to Flutter assets
-    # In GitHub Actions, the flutter_app dir exists, but we mainly want the file 
-    # to be committed to ml_training/ so the app can download it via raw URL.
-    asset_dir = os.path.join(os.path.dirname(__file__), '../flutter_app/assets/models/')
+    asset_dir = os.path.join(base_path, '../flutter_app/assets/models/')
     if os.path.exists(asset_dir):
-        shutil.copy("red_ball_xgb.onnx", os.path.join(asset_dir, "red_ball_xgb.onnx"))
-        shutil.copy("blue_ball_xgb.onnx", os.path.join(asset_dir, "blue_ball_xgb.onnx"))
+        shutil.copy(red_onnx_path, os.path.join(asset_dir, "red_ball_xgb.onnx"))
+        shutil.copy(blue_onnx_path, os.path.join(asset_dir, "blue_ball_xgb.onnx"))
         print(f"Models deployed to {asset_dir}")
     else:
         print("Note: Flutter asset directory not found locally (expected in CI).")
