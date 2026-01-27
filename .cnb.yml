@@ -17,7 +17,7 @@ main:
                 echo "No changes detected. Skipping commit."
               else
                 git commit -m "Auto-retrain model: $(date +'%Y-%m-%d %H:%M')"
-                git push origin main
+                git push https://x-token-auth:${CNB_TOKEN}@cnb.cool/CalvinHui01/bicolor.git main
               fi
 
   push:
