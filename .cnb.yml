@@ -11,7 +11,7 @@ main:
             - python ml_training/incremental_update.py
             - git config --global user.name "cnb-bot"
             - git config --global user.email "bot@cnb.cool"
-            - git add ml_training/ssq_data.csv ml_training/*.joblib ml_training/*.onnx
+            - git add ml_training/ssq_data.csv ml_training/*.joblib ml_training/*.onnx flutter_app/assets/models/*.onnx
             - |
               if git diff --staged --quiet; then
                 echo "No changes detected. Skipping commit."
