@@ -343,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const Padding(
                 padding: EdgeInsets.only(top: 32, bottom: 24),
                 child: Text(
-                  '© 2026 许迅文. All Rights Reserved.',
+                  '© 2026 Calvin Hui. All Rights Reserved.',
                   style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
               ),

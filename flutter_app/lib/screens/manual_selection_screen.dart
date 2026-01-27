@@ -306,7 +306,7 @@ class _ManualSelectionScreenState extends State<ManualSelectionScreen> {
                   ),
                 ],
                 const SizedBox(height: 32),
-                const Center(child: Padding(padding: EdgeInsets.only(bottom: 24), child: Text('© 2026 许迅文. All Rights Reserved.', style: TextStyle(color: Colors.grey, fontSize: 12)))),
+                const Center(child: Padding(padding: EdgeInsets.only(bottom: 24), child: Text('© 2026 Calvin Hui. All Rights Reserved.', style: TextStyle(color: Colors.grey, fontSize: 12)))),
               ],
             ),
           ),
