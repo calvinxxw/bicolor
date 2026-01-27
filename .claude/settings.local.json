@@ -51,7 +51,11 @@
       "Bash(\"C:\\\\Users\\\\64135\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" shell input tap:*)",
       "Bash(\"C:\\\\Users\\\\64135\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" shell:*)",
       "Bash(\"C:\\\\Users\\\\64135\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" shell am start -n com.lottery.lottery_predictor/.MainActivity)",
-      "Bash(nc:*)"
+      "Bash(nc:*)",
+      "Bash(.\\\\venv\\\\Scripts\\\\python.exe:*)",
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(../venv/Scripts/python.exe:*)",
+      "Bash(./venv/Scripts/pip.exe install:*)"
     ]
   }
 }

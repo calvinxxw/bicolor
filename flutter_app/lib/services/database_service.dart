@@ -129,9 +129,11 @@ class DatabaseService {
 
   Future<int> insertResult(LotteryResult result) async {
     final db = await database;
+    final map = result.toMap();
+    map.remove('id'); // Allow SQLite to auto-generate ID
     return await db.insert(
       'lottery_results',
-      result.toMap(),
+      map,
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
   }

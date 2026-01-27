@@ -1,19 +1,19 @@
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:onnxruntime/onnxruntime.dart';
 import 'package:synchronized/synchronized.dart';
+import 'package:flutter/services.dart';
 import '../models/lottery_result.dart';
 import '../models/prediction_result.dart';
 import 'data_service.dart';
-import 'database_service.dart';
 
 class PredictionService {
   static final PredictionService _instance = PredictionService._internal();
   factory PredictionService() => _instance;
   PredictionService._internal();
 
-  Interpreter? _redInterpreter;
-  Interpreter? _blueInterpreter;
+  OrtSession? _redSession;
+  OrtSession? _blueSession;
   bool _isLoaded = false;
   final _lock = Lock();
 
@@ -23,12 +23,21 @@ class PredictionService {
     await _lock.synchronized(() async {
       if (_isLoaded) return;
       try {
-        print("PredictionService: Loading 88% Precision Models...");
-        final options = InterpreterOptions()..threads = 2;
-        _redInterpreter = await Interpreter.fromAsset('assets/models/red_ball_model.tflite', options: options);
-        _blueInterpreter = await Interpreter.fromAsset('assets/models/blue_ball_model.tflite', options: options);
+        print("PredictionService: Loading XGBoost-ONNX Models...");
+        
+        // Initialize ONNX Runtime Environment
+        OrtEnv.instance.init();
+        
+        final redModelData = await rootBundle.load('assets/models/red_ball_xgb.onnx');
+        final blueModelData = await rootBundle.load('assets/models/blue_ball_xgb.onnx');
+
+        final sessionOptions = OrtSessionOptions();
+        
+        _redSession = OrtSession.fromBuffer(redModelData.buffer.asUint8List(), sessionOptions);
+        _blueSession = OrtSession.fromBuffer(blueModelData.buffer.asUint8List(), sessionOptions);
+        
         _isLoaded = true;
-        print("PredictionService: 88% Model Active.");
+        print("PredictionService: XGBoost-ONNX Model Active.");
       } catch (e) {
         print("PredictionService: Critical Load Error: $e");
       }
@@ -72,90 +81,83 @@ class PredictionService {
         }
       }
 
-      var energy = Float32List(seqLen * 99);
-      var balance = Float32List(seqLen * 10);
-      var affinity = Float32List(seqLen * 10);
+      // Flattened features for XGBoost
+      var redFeatures = Float32List(seqLen * 119);
+      var blueFeatures = Float32List(seqLen * 32);
 
       for (int step = 0; step < seqLen; step++) {
         int i = recent.length - seqLen + step + 1;
         List<int> prevReds = List<int>.from(recent[i - 1].redBalls)..sort();
 
+        // Red Features (119 per step)
+        int redBase = step * 119;
         for (int n = 1; n <= 33; n++) {
           int gap = 0;
           for (int k = i - 1; k >= 0; k--) { if (recent[k].redBalls.contains(n)) break; gap++; }
-          energy[step * 99 + (n - 1)] = min(gap / 50.0, 1.0);
-          energy[step * 99 + 33 + (n - 1)] = recent.sublist(max(0, i - 30), i).where((r) => r.redBalls.contains(n)).length / 30.0;
-          energy[step * 99 + 66 + (n - 1)] = recent.sublist(max(0, i - 5), i).where((r) => r.redBalls.contains(n)).length / 5.0;
+          redFeatures[redBase + (n - 1)] = min(gap / 50.0, 1.0);
+          redFeatures[redBase + 33 + (n - 1)] = recent.sublist(max(0, i - 30), i).where((r) => r.redBalls.contains(n)).length / 30.0;
+          redFeatures[redBase + 66 + (n - 1)] = recent.sublist(max(0, i - 5), i).where((r) => r.redBalls.contains(n)).length / 5.0;
         }
 
-        balance[step * 10 + 0] = prevReds.reduce((a, b) => a + b) / 200.0;
-        balance[step * 10 + 1] = _calculateAC(prevReds) / 10.0;
-        balance[step * 10 + 2] = prevReds.where((n) => n % 2 != 0).length / 6.0;
-        balance[step * 10 + 3] = prevReds.where((n) => n > 16).length / 6.0;
-        balance[step * 10 + 4] = prevReds.where((n) => primes.contains(n)).length / 6.0;
-        balance[step * 10 + 5] = prevReds.where((n) => n <= 11).length / 6.0;
-        balance[step * 10 + 6] = prevReds.where((n) => n > 11 && n <= 22).length / 6.0;
-        balance[step * 10 + 7] = prevReds.where((n) => n > 22).length / 6.0;
-        balance[step * 10 + 8] = (prevReds.last - prevReds.first) / 32.0;
+        redFeatures[redBase + 99 + 0] = prevReds.reduce((a, b) => a + b) / 200.0;
+        redFeatures[redBase + 99 + 1] = _calculateAC(prevReds) / 10.0;
+        redFeatures[redBase + 99 + 2] = prevReds.where((n) => n % 2 != 0).length / 6.0;
+        redFeatures[redBase + 99 + 3] = prevReds.where((n) => n > 16).length / 6.0;
+        redFeatures[redBase + 99 + 4] = prevReds.where((n) => primes.contains(n)).length / 6.0;
+        redFeatures[redBase + 99 + 5] = prevReds.where((n) => n <= 11).length / 6.0;
+        redFeatures[redBase + 99 + 6] = prevReds.where((n) => n > 11 && n <= 22).length / 6.0;
+        redFeatures[redBase + 99 + 7] = prevReds.where((n) => n > 22).length / 6.0;
+        redFeatures[redBase + 99 + 8] = (prevReds.last - prevReds.first) / 32.0;
         int maxC = 1, curC = 1;
         for (int j = 0; j < prevReds.length - 1; j++) {
           if (prevReds[j+1] == prevReds[j]+1) curC++; else { maxC = max(maxC, curC); curC = 1; }
         }
-        balance[step * 10 + 9] = max(maxC, curC) / 6.0;
+        redFeatures[redBase + 99 + 9] = max(maxC, curC) / 6.0;
 
         for (int idx = 0; idx < 10; idx++) {
           int anchor = (idx * 3) + 1;
           double s = 0;
           for (int p in prevReds) s += (coMatrix[anchor]?[p] ?? 0);
-          affinity[step * 10 + idx] = min(s / 50.0, 1.0);
+          redFeatures[redBase + 109 + idx] = min(s / 50.0, 1.0);
+        }
+
+        // Blue Features (32 per step)
+        int blueBase = step * 32;
+        int i_blue = recent.length - seqLen + step;
+        for (int n = 1; n <= 16; n++) {
+          int g = 0;
+          for (int k = i_blue - 1; k >= 0; k--) { if (recent[k].blueBall == n) break; g++; }
+          blueFeatures[blueBase + (n - 1)] = min(g / 50.0, 1.0);
+          blueFeatures[blueBase + 16 + (n - 1)] = recent.sublist(max(0, i_blue - 30), i_blue).where((r) => r.blueBall == n).length / 30.0;
         }
       }
 
       try {
-        var redIn = [
-          energy.buffer.asFloat32List().reshape([1, 15, 99]),
-          balance.buffer.asFloat32List().reshape([1, 15, 10]),
-          affinity.buffer.asFloat32List().reshape([1, 15, 10])
-        ];
+        final runOptions = OrtRunOptions();
         
-        final outputTensors = _redInterpreter!.getOutputTensors();
-        var redOuts = <int, Object>{};
-        int? heatmapIndex;
+        // Red Inference
+        final redInputOrt = OrtValueTensor.createTensorWithDataList(redFeatures, [1, 1785]);
+        final redInputs = {'input': redInputOrt};
+        final redOutputs = _redSession!.run(runOptions, redInputs);
         
-        for (int i = 0; i < outputTensors.length; i++) {
-          if (outputTensors[i].shape.contains(33)) {
-            heatmapIndex = i;
-            redOuts[i] = List.filled(33, 0.0).reshape([1, 33]);
-          } else if (outputTensors[i].shape.contains(3)) {
-            redOuts[i] = List.filled(3, 0.0).reshape([1, 3]);
-          }
-        }
+        // XGBoost with zipmap=False returns output 0 as labels and output 1 as probabilities
+        final redProbabilities = (redOutputs[1]?.value as List<List<double>>)[0];
+        
+        // Blue Inference
+        final blueInputOrt = OrtValueTensor.createTensorWithDataList(blueFeatures, [1, 480]);
+        final blueInputs = {'input': blueInputOrt};
+        final blueOutputs = _blueSession!.run(runOptions, blueInputs);
+        final blueProbabilities = (blueOutputs[1]?.value as List<List<double>>)[0];
 
-        if (heatmapIndex == null) {
-          // Fallback if model has only one output
-          redOuts[0] = List.filled(33, 0.0).reshape([1, 33]);
-          heatmapIndex = 0;
-        }
-
-        _redInterpreter!.runForMultipleInputs(redIn, redOuts);
-        List<double> redResult = List<double>.from((redOuts[heatmapIndex] as List)[0]);
-
-        var blueIn = Float32List(seqLen * 32);
-        for (int step = 0; step < seqLen; step++) {
-          int i = recent.length - seqLen + step;
-          for (int n = 1; n <= 16; n++) {
-            int g = 0;
-            for (int k = i - 1; k >= 0; k--) { if (recent[k].blueBall == n) break; g++; }
-            blueIn[step * 32 + (n - 1)] = min(g / 50.0, 1.0);
-            blueIn[step * 32 + 16 + (n - 1)] = recent.sublist(max(0, i - 30), i).where((r) => r.blueBall == n).length / 30.0;
-          }
-        }
-        var blueOut = List.filled(16, 0.0).reshape([1, 16]);
-        _blueInterpreter!.run(blueIn.reshape([1, 15, 32]), blueOut);
+        // Clean up
+        redInputOrt.release();
+        blueInputOrt.release();
+        for (var element in redOutputs) { element?.release(); }
+        for (var element in blueOutputs) { element?.release(); }
 
         return {
-          'red': redResult,
-          'blue': List<double>.from(blueOut[0]),
+          'red': List<double>.from(redProbabilities),
+          'blue': List<double>.from(blueProbabilities),
         };
       } catch (e) {
         print("PredictionService: Inference Fatal: $e");
@@ -165,8 +167,9 @@ class PredictionService {
   }
 
   void dispose() {
-    _redInterpreter?.close();
-    _blueInterpreter?.close();
+    _redSession?.release();
+    _blueSession?.release();
+    OrtEnv.instance.release();
     _isLoaded = false;
   }
 

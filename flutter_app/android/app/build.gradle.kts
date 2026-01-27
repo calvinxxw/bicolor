@@ -49,10 +49,6 @@ android {
     }
 }
 
-dependencies {
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
-}
-
 flutter {
     source = "../.."
 }

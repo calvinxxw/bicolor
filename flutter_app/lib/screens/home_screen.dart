@@ -31,9 +31,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _initializeData() async {
     await _loadRecentResults();
-    if (_recentResults.isEmpty) {
-      await _syncData();
-    }
+    // Always attempt sync on startup, but silently if there's already data
+    await _syncData(silent: _recentResults.isNotEmpty);
   }
 
   Future<void> _loadRecentResults() async {
@@ -59,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _syncData() async {
+  Future<void> _syncData({bool silent = false}) async {
     if (_isLoading) return;
 
     setState(() {
@@ -73,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastSyncTime = DateTime.now();
       });
 
-      if (mounted) {
+      if (mounted && (!silent || count > 0)) {
         String msg = count > 0 ? '成功同步 $count 条新数据' : '已经是最新数据';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -84,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !silent) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('同步失败: $e'),
@@ -251,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: _syncData,
+      onRefresh: () => _syncData(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
@@ -260,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
             LatestDrawWidget(
               results: _recentResults,
               isLoading: _isLoading,
-              onRefresh: _syncData,
+              onRefresh: () => _syncData(),
               lastSyncTime: _lastSyncTime,
             ),
             const SizedBox(height: 24),
