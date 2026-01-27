@@ -1,0 +1,29 @@
+# CNB CI/CD configuration
+# Mirror of GitHub Actions for automated model retraining
+
+main:
+  "crontab: 15 9 * * 1,3,5":
+    - stages:
+        - name: Retrain Lottery Model
+          image: python:3.11
+          script:
+            - pip install -r ml_training/requirements.txt
+            - python ml_training/incremental_update.py
+            - git config --global user.name "cnb-bot"
+            - git config --global user.email "bot@cnb.cool"
+            - git add ml_training/ssq_data.csv ml_training/*.joblib ml_training/*.onnx
+            - |
+              if git diff --staged --quiet; then
+                echo "No changes detected. Skipping commit."
+              else
+                git commit -m "Auto-retrain model: $(date +'%Y-%m-%d %H:%M')"
+                git push origin main
+              fi
+
+  push:
+    - stages:
+        - name: Environment Check
+          image: python:3.11
+          script:
+            - python --version
+            - echo "CNB Pipeline is ready."
