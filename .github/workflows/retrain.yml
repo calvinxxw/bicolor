@@ -25,7 +25,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy xgboost requests beautifulsoup4 joblib onnxmltools onnxruntime skl2onnx
+          pip install -r ml_training/requirements.txt
 
       - name: Run Incremental Update
         run: |
@@ -38,10 +38,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # Add only relevant files
+          # Add only relevant files including Flutter assets
           git add ml_training/ssq_data.csv
           git add ml_training/*.joblib
           git add ml_training/*.onnx
+          git add flutter_app/assets/models/*.onnx
           
           # Check if there are actual changes staged
           if git diff --staged --quiet; then

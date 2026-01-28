@@ -8,7 +8,10 @@ def fetch_full_ssq_data():
     print(f"Fetching full dataset from {url}...")
     
     try:
-        response = requests.get(url, timeout=30)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=30, verify=False)
         response.raise_for_status()
         
         root = ET.fromstring(response.content)
