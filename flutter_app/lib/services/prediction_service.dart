@@ -16,8 +16,10 @@ class PredictionService {
   factory PredictionService() => _instance;
   PredictionService._internal();
 
-  OrtSession? _redSession;
-  OrtSession? _blueSession;
+  OrtSession? _redSessionXgb;
+  OrtSession? _redSessionLgbm;
+  OrtSession? _blueSessionXgb;
+  OrtSession? _blueSessionLgbm;
   bool _isLoaded = false;
   final _lock = Lock();
 
@@ -28,31 +30,31 @@ class PredictionService {
     await _lock.synchronized(() async {
       if (_isLoaded) return;
       try {
-        print("PredictionService: Initializing AI Engine...");
+        print("PredictionService: Initializing AI Engine (Ensemble)...");
         OrtEnv.instance.init();
         
         final docDir = await getApplicationDocumentsDirectory();
-        final redFile = File('${docDir.path}/red_ball_xgb.onnx');
-        final blueFile = File('${docDir.path}/blue_ball_xgb.onnx');
-
-        Uint8List redData;
-        Uint8List blueData;
-
-        if (await redFile.exists() && await blueFile.exists()) {
-          print("PredictionService: Loading Custom Trained Models from Storage");
-          redData = await redFile.readAsBytes();
-          blueData = await blueFile.readAsBytes();
-        } else {
-          print("PredictionService: Loading Default Bundled Models");
-          final rBundle = await rootBundle.load('assets/models/red_ball_xgb.onnx');
-          final bBundle = await rootBundle.load('assets/models/blue_ball_xgb.onnx');
-          redData = rBundle.buffer.asUint8List();
-          blueData = bBundle.buffer.asUint8List();
+        
+        Future<Uint8List> loadModel(String name) async {
+          final file = File('${docDir.path}/$name');
+          if (await file.exists()) {
+            return await file.readAsBytes();
+          } else {
+            final bundle = await rootBundle.load('assets/models/$name');
+            return bundle.buffer.asUint8List();
+          }
         }
 
+        final redXgbData = await loadModel('red_ball_xgb.onnx');
+        final redLgbmData = await loadModel('red_ball_lgbm.onnx');
+        final blueXgbData = await loadModel('blue_ball_xgb.onnx');
+        final blueLgbmData = await loadModel('blue_ball_lgbm.onnx');
+
         final sessionOptions = OrtSessionOptions();
-        _redSession = OrtSession.fromBuffer(redData, sessionOptions);
-        _blueSession = OrtSession.fromBuffer(blueData, sessionOptions);
+        _redSessionXgb = OrtSession.fromBuffer(redXgbData, sessionOptions);
+        _redSessionLgbm = OrtSession.fromBuffer(redLgbmData, sessionOptions);
+        _blueSessionXgb = OrtSession.fromBuffer(blueXgbData, sessionOptions);
+        _blueSessionLgbm = OrtSession.fromBuffer(blueLgbmData, sessionOptions);
         
         _isLoaded = true;
       } catch (e) {
@@ -64,15 +66,25 @@ class PredictionService {
   Future<bool> syncModels(String baseUrl) async {
     try {
       final docDir = await getApplicationDocumentsDirectory();
-      print("PredictionService: Syncing models from $baseUrl...");
+      print("PredictionService: Syncing ensemble models from $baseUrl...");
       
-      await _dio.download("$baseUrl/red_ball_xgb.onnx", '${docDir.path}/red_ball_xgb.onnx');
-      await _dio.download("$baseUrl/blue_ball_xgb.onnx", '${docDir.path}/blue_ball_xgb.onnx');
+      final models = [
+        'red_ball_xgb.onnx', 
+        'red_ball_lgbm.onnx', 
+        'blue_ball_xgb.onnx', 
+        'blue_ball_lgbm.onnx'
+      ];
+
+      for (var model in models) {
+        await _dio.download("$baseUrl/$model", '${docDir.path}/$model');
+      }
       
       // Reload sessions
       _isLoaded = false;
-      _redSession?.release();
-      _blueSession?.release();
+      _redSessionXgb?.release();
+      _redSessionLgbm?.release();
+      _blueSessionXgb?.release();
+      _blueSessionLgbm?.release();
       await init();
       return true;
     } catch (e) {
@@ -176,29 +188,43 @@ class PredictionService {
       try {
         final runOptions = OrtRunOptions();
         
-        // Red Inference
+        // --- Red Inference ---
         final redInputOrt = OrtValueTensor.createTensorWithDataList(redFeatures, [1, 1785]);
         final redInputs = {'input': redInputOrt};
-        final redOutputs = _redSession!.run(runOptions, redInputs);
         
-        // XGBoost with zipmap=False returns output 0 as labels and output 1 as probabilities
-        final redProbabilities = (redOutputs[1]?.value as List<List<double>>)[0];
+        final redOutputsXgb = _redSessionXgb!.run(runOptions, redInputs);
+        final redProbXgb = (redOutputsXgb[1]?.value as List<List<double>>)[0];
         
-        // Blue Inference
+        final redOutputsLgbm = _redSessionLgbm!.run(runOptions, redInputs);
+        final redProbLgbm = (redOutputsLgbm[1]?.value as List<List<double>>)[0];
+
+        // Blend Red (0.5 weight each)
+        List<double> redBlended = List.generate(33, (i) => (redProbXgb[i] + redProbLgbm[i]) / 2.0);
+        
+        // --- Blue Inference ---
         final blueInputOrt = OrtValueTensor.createTensorWithDataList(blueFeatures, [1, 480]);
         final blueInputs = {'input': blueInputOrt};
-        final blueOutputs = _blueSession!.run(runOptions, blueInputs);
-        final blueProbabilities = (blueOutputs[1]?.value as List<List<double>>)[0];
+        
+        final blueOutputsXgb = _blueSessionXgb!.run(runOptions, blueInputs);
+        final blueProbXgb = (blueOutputsXgb[1]?.value as List<List<double>>)[0];
+        
+        final blueOutputsLgbm = _blueSessionLgbm!.run(runOptions, blueInputs);
+        final blueProbLgbm = (blueOutputsLgbm[1]?.value as List<List<double>>)[0];
+
+        // Blend Blue
+        List<double> blueBlended = List.generate(16, (i) => (blueProbXgb[i] + blueProbLgbm[i]) / 2.0);
 
         // Clean up
         redInputOrt.release();
         blueInputOrt.release();
-        for (var element in redOutputs) { element?.release(); }
-        for (var element in blueOutputs) { element?.release(); }
+        for (var e in redOutputsXgb) e?.release();
+        for (var e in redOutputsLgbm) e?.release();
+        for (var e in blueOutputsXgb) e?.release();
+        for (var e in blueOutputsLgbm) e?.release();
 
         return {
-          'red': List<double>.from(redProbabilities),
-          'blue': List<double>.from(blueProbabilities),
+          'red': redBlended,
+          'blue': blueBlended,
         };
       } catch (e) {
         print("PredictionService: Inference Fatal: $e");
@@ -208,8 +234,10 @@ class PredictionService {
   }
 
   void dispose() {
-    _redSession?.release();
-    _blueSession?.release();
+    _redSessionXgb?.release();
+    _redSessionLgbm?.release();
+    _blueSessionXgb?.release();
+    _blueSessionLgbm?.release();
     OrtEnv.instance.release();
     _isLoaded = false;
   }

@@ -93,9 +93,9 @@ def train():
     print("Loading data...")
     df = pd.read_csv('ssq_data.csv').sort_values('issue').reset_index(drop=True)
     
-    # Red Window: 50
-    red_window_size = 50
-    print(f"Applying red window-based training: using last {red_window_size} draws.")
+    # Red Window: Use full history
+    red_window_size = len(df) - 15  # Use all available data
+    print(f"Applying red window-based training: using all {red_window_size} draws.")
     df_red = df.tail(red_window_size + 15).copy().reset_index(drop=True)
     rg, rf, m, rs, ra = calculate_features(df_red)
     

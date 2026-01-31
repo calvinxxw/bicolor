@@ -2,11 +2,13 @@ import os
 import pandas as pd
 import numpy as np
 import xgboost as xgb
+import lightgbm as lgb
 import joblib
+import shutil
+import onnxmltools
+from onnxmltools.convert.common.data_types import FloatTensorType
 from data_crawler import fetch_full_ssq_data
 from train_xgboost import calculate_features, prepare_blue_features
-# import onnxmltools
-# from onnxmltools.convert.common.data_types import FloatTensorType
 
 def incremental_update():
     # 1. Fetch the latest data
@@ -29,7 +31,7 @@ def incremental_update():
         return
 
     # 2. Prepare Features
-    print("Step 2: Preparing features with dual windows (Red: 50, Blue: 1000)...")
+    print("Step 2: Preparing features with ensemble windows (Red: 50, Blue: 1000)...")
     
     # Red Training
     red_window_size = 50
@@ -81,70 +83,59 @@ def incremental_update():
     X_blue, y_blue = np.array(X_blue), np.array(y_blue)
 
     # 3. Retrain Models
-    print("Step 3: Retraining XGBoost models...")
+    print("Step 3: Retraining Ensemble models (XGBoost + LightGBM)...")
     base_path = os.path.dirname(__file__)
     
-    # Red Model
-    red_xgb = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='multi:softprob',
-        num_class=33,
-        tree_method='hist',
-        random_state=42
-    )
+    # Red Ensemble
+    print("Training Red Models...")
+    red_xgb = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, objective='multi:softprob', num_class=33, tree_method='hist', random_state=42)
     red_xgb.fit(X_red, y_red)
     joblib.dump(red_xgb, os.path.join(base_path, 'red_ball_xgb.joblib'))
-    print("Red Model Retrained.")
+    
+    red_lgbm = lgb.LGBMClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, objective='multiclass', num_class=33, random_state=42, verbose=-1)
+    red_lgbm.fit(X_red, y_red)
+    joblib.dump(red_lgbm, os.path.join(base_path, 'red_ball_lgbm.joblib'))
 
-    # Blue Model
-    blue_xgb = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        objective='multi:softprob',
-        num_class=16,
-        tree_method='hist',
-        random_state=42
-    )
+    # Blue Ensemble
+    print("Training Blue Models...")
+    blue_xgb = xgb.XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, objective='multi:softprob', num_class=16, tree_method='hist', random_state=42)
     blue_xgb.fit(X_blue, y_blue)
     joblib.dump(blue_xgb, os.path.join(base_path, 'blue_ball_xgb.joblib'))
-    print("Blue Model Retrained.")
+    
+    blue_lgbm = lgb.LGBMClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, objective='multiclass', num_class=16, random_state=42, verbose=-1)
+    blue_lgbm.fit(X_blue, y_blue)
+    joblib.dump(blue_lgbm, os.path.join(base_path, 'blue_ball_lgbm.joblib'))
 
-    # 4. Export to ONNX and Deploy
-    print("Step 4: Exporting to ONNX and Deploying to App...")
-    import onnxmltools
-    from onnxmltools.convert.common.data_types import FloatTensorType
-    import shutil
-
-    # Convert Red
+    # 4. Export to ONNX
+    print("Step 4: Exporting to ONNX...")
+    
+    # Red ONNX
     initial_type_red = [('input', FloatTensorType([None, 1785]))]
-    onx_red = onnxmltools.convert_xgboost(red_xgb, initial_types=initial_type_red, target_opset=12)
-    red_onnx_path = os.path.join(base_path, "red_ball_xgb.onnx")
-    with open(red_onnx_path, "wb") as f:
-        f.write(onx_red.SerializeToString())
-
-    # Convert Blue
+    onx_red_xgb = onnxmltools.convert_xgboost(red_xgb, initial_types=initial_type_red, target_opset=12)
+    onx_red_lgbm = onnxmltools.convert_lightgbm(red_lgbm, initial_types=initial_type_red, target_opset=12, zipmap=False)
+    
+    # Blue ONNX
     initial_type_blue = [('input', FloatTensorType([None, 480]))]
-    onx_blue = onnxmltools.convert_xgboost(blue_xgb, initial_types=initial_type_blue, target_opset=12)
-    blue_onnx_path = os.path.join(base_path, "blue_ball_xgb.onnx")
-    with open(blue_onnx_path, "wb") as f:
-        f.write(onx_blue.SerializeToString())
+    onx_blue_xgb = onnxmltools.convert_xgboost(blue_xgb, initial_types=initial_type_blue, target_opset=12)
+    onx_blue_lgbm = onnxmltools.convert_lightgbm(blue_lgbm, initial_types=initial_type_blue, target_opset=12, zipmap=False)
 
-    # Copy to Flutter assets
+    # Save and Copy
+    paths = {
+        "red_ball_xgb.onnx": onx_red_xgb,
+        "red_ball_lgbm.onnx": onx_red_lgbm,
+        "blue_ball_xgb.onnx": onx_blue_xgb,
+        "blue_ball_lgbm.onnx": onx_blue_lgbm
+    }
+    
     asset_dir = os.path.join(base_path, '../flutter_app/assets/models/')
-    if os.path.exists(asset_dir):
-        shutil.copy(red_onnx_path, os.path.join(asset_dir, "red_ball_xgb.onnx"))
-        shutil.copy(blue_onnx_path, os.path.join(asset_dir, "blue_ball_xgb.onnx"))
-        print(f"Models deployed to {asset_dir}")
-    else:
-        print("Note: Flutter asset directory not found locally (expected in CI).")
+    for name, proto in paths.items():
+        local_path = os.path.join(base_path, name)
+        with open(local_path, "wb") as f:
+            f.write(proto.SerializeToString())
+        if os.path.exists(asset_dir):
+            shutil.copy(local_path, os.path.join(asset_dir, name))
     
-    # Also ensure they are in the current dir for git add
-    print("Models saved in ml_training/ for GitHub versioning.")
-    
-    print("Incremental Update Complete!")
+    print("Incremental Update Complete (Ensemble)!")
 
 if __name__ == '__main__':
     incremental_update()
