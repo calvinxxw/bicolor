@@ -3,56 +3,63 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import os
 
-def fetch_full_ssq_data():
+def fetch_full_ssq_data(retries=3):
     url = 'https://kaijiang.500.com/static/info/kaijiang/xml/ssq/list.xml'
-    print(f"Fetching full dataset from {url}...")
     
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=30, verify=False)
-        response.raise_for_status()
-        
-        root = ET.fromstring(response.content)
-        data = []
-        
-        for row in root.findall('row'):
-            expect = row.get('expect')
-            opencode = row.get('opencode')
-            opentime = row.get('opentime')
+    for attempt in range(retries):
+        print(f"Fetching full dataset from {url} (Attempt {attempt + 1}/{retries})...")
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=30, verify=False)
+            response.raise_for_status()
             
-            if not expect or not opencode:
-                continue
+            root = ET.fromstring(response.content)
+            data = []
+            
+            for row in root.findall('row'):
+                expect = row.get('expect')
+                opencode = row.get('opencode')
+                opentime = row.get('opentime')
                 
-            parts = opencode.split('|')
-            reds = parts[0].split(',')
-            blue = parts[1]
+                if not expect or not opencode:
+                    continue
+                    
+                parts = opencode.split('|')
+                reds = parts[0].split(',')
+                blue = parts[1]
+                
+                data.append({
+                    'issue': expect,
+                    'date': opentime,
+                    'red1': reds[0],
+                    'red2': reds[1],
+                    'red3': reds[2],
+                    'red4': reds[3],
+                    'red5': reds[4],
+                    'red6': reds[5],
+                    'blue': blue
+                })
+                
+            df = pd.DataFrame(data)
+            # Ensure issue is numeric for sorting
+            df['issue'] = pd.to_numeric(df['issue'])
+            df = df.sort_values('issue').reset_index(drop=True)
             
-            data.append({
-                'issue': expect,
-                'date': opentime,
-                'red1': reds[0],
-                'red2': reds[1],
-                'red3': reds[2],
-                'red4': reds[3],
-                'red5': reds[4],
-                'red6': reds[5],
-                'blue': blue
-            })
+            # Save to local directory to avoid path issues
+            output_path = os.path.join(os.path.dirname(__file__), 'ssq_data.csv')
+            df.to_csv(output_path, index=False)
+            print(f"Successfully saved {len(df)} records to {output_path}")
+            return df
             
-        df = pd.DataFrame(data)
-        # Ensure issue is numeric for sorting
-        df['issue'] = pd.to_numeric(df['issue'])
-        df = df.sort_values('issue').reset_index(drop=True)
-        
-        df.to_csv('ssq_data.csv', index=False)
-        print(f"Successfully saved {len(df)} records to ssq_data.csv")
-        return df
-        
-    except Exception as e:
-        print(f"Error fetching data: {e}")
-        return None
+        except Exception as e:
+            print(f"Error fetching data on attempt {attempt + 1}: {e}")
+            if attempt == retries - 1:
+                return None
+            import time
+            time.sleep(5) # Wait 5 seconds before retry
+    return None
 
 if __name__ == "__main__":
     fetch_full_ssq_data()

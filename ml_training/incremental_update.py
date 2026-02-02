@@ -13,22 +13,26 @@ from train_xgboost import calculate_features, prepare_blue_features
 def incremental_update():
     # 1. Fetch the latest data
     print("Step 1: Fetching latest draw data...")
-    try:
-        df_new = fetch_full_ssq_data()
-        if df_new is None:
-            raise Exception("Crawler returned None")
-        
-        csv_path = os.path.join(os.path.dirname(__file__), 'ssq_data.csv')
-        df_old = pd.read_csv(csv_path)
-        
-        df_combined = pd.concat([df_new, df_old]).drop_duplicates(subset=['issue'])
-        df_combined['issue'] = df_combined['issue'].astype(int)
-        df_combined = df_combined.sort_values('issue').reset_index(drop=True)
-        df_combined.to_csv(csv_path, index=False)
-        print(f"Dataset updated. Total records: {len(df_combined)}")
-    except Exception as e:
-        print(f"Crawl failed: {e}")
+    df_new = fetch_full_ssq_data()
+    if df_new is None:
+        raise Exception("Crawler failed to fetch data after multiple attempts.")
+    
+    csv_path = os.path.join(os.path.dirname(__file__), 'ssq_data.csv')
+    df_old = pd.read_csv(csv_path)
+    
+    # Check if there's actually new data
+    latest_old = int(df_old['issue'].max())
+    latest_new = int(df_new['issue'].max())
+    
+    if latest_new <= latest_old:
+        print(f"No new data found (Latest: {latest_old}). Skipping retraining.")
         return
+
+    df_combined = pd.concat([df_new, df_old]).drop_duplicates(subset=['issue'])
+    df_combined['issue'] = df_combined['issue'].astype(int)
+    df_combined = df_combined.sort_values('issue').reset_index(drop=True)
+    df_combined.to_csv(csv_path, index=False)
+    print(f"Dataset updated. Total records: {len(df_combined)}. Newest issue: {latest_new}")
 
     # 2. Prepare Features
     print("Step 2: Preparing features with ensemble windows (Red: 50, Blue: 1000)...")
