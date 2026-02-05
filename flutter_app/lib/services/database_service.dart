@@ -140,7 +140,7 @@ class DatabaseService {
 
   Future<List<LotteryResult>> getAllResults() async {
     final db = await database;
-    final maps = await db.query('lottery_results', orderBy: 'issue DESC');
+    final maps = await db.query('lottery_results', orderBy: 'CAST(issue AS INTEGER) DESC');
     return maps.map((map) => LotteryResult.fromMap(map)).toList();
   }
 
@@ -148,7 +148,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'lottery_results',
-      orderBy: 'issue DESC',
+      orderBy: 'CAST(issue AS INTEGER) DESC',
       limit: count,
     );
     return maps.map((map) => LotteryResult.fromMap(map)).toList();
@@ -158,7 +158,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'lottery_results',
-      orderBy: 'issue DESC',
+      orderBy: 'CAST(issue AS INTEGER) DESC',
       limit: 1,
     );
     if (maps.isEmpty) return null;
