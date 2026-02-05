@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 import xgboost as xgb
+import lightgbm as lgb
 
 def calculate_ac_value(reds):
     diffs = set()
@@ -12,11 +13,6 @@ def calculate_ac_value(reds):
     return len(diffs) - (len(reds) - 1)
 
 def calculate_features_single(df_window):
-    # df_window should be the last 15 draws for features + enough historical context for freq
-    # But wait, our feature engineering needs 30 draws for freq.
-    # Let's just use the logic from the train script but only for the very last step.
-    
-    # To be safe, let's take a larger chunk to calculate stats correctly
     df = df_window.copy().reset_index(drop=True)
     num_samples = len(df)
     red_cols = ['red1', 'red2', 'red3', 'red4', 'red5', 'red6']
@@ -99,93 +95,68 @@ def predict():
     csv_path = os.path.join(base_path, 'ssq_data.csv')
     df = pd.read_csv(csv_path).sort_values('issue').reset_index(drop=True)
     
-    red_model = joblib.load(os.path.join(base_path, 'red_ball_xgb.joblib'))
-    blue_model = joblib.load(os.path.join(base_path, 'blue_ball_xgb.joblib'))
+    red_xgb = joblib.load(os.path.join(base_path, 'red_ball_xgb.joblib'))
+    red_lgbm = joblib.load(os.path.join(base_path, 'red_ball_lgbm.joblib'))
+    blue_xgb = joblib.load(os.path.join(base_path, 'blue_ball_xgb.joblib'))
+    blue_lgbm = joblib.load(os.path.join(base_path, 'blue_ball_lgbm.joblib'))
     
-    # We need the last 15 draws + context for stats (30 draws context)
-    # Total 45 draws
     df_context = df.tail(45).copy().reset_index(drop=True)
     rg, rf, m, rs, ra = calculate_features_single(df_context)
     bg, bf = prepare_blue_features_single(df_context)
-    
-    # The last index in df_context is the most recent draw
-    # To predict the NEXT draw, we use features calculated AFTER the most recent draw
-    # In the training loop, X[i] uses features from steps i-seq_len to i-1
-    # So for the next draw (unseen), we use features from steps len(df)-seq_len to len(df)-1
     
     seq_len = 15
     i = len(df_context) 
     
     # Red Features
     red_feat = []
-    # Since we need features for the draw AFTER the last one in df_context,
-    # we need to calculate one more step of features.
-    
-    # Actually, the calculate_features function already calculates 'current_red_gaps' etc. 
-    # but the arrays rg, rf, etc. only go up to len(df)-1.
-    # Let's just manually append the last state.
-    
-    # Simplest way: Run backtest-style logic for the last possible window
-    red_feat = []
     for step in range(len(df_context) - seq_len, len(df_context)):
-        red_feat.extend(rg[step])
-        red_feat.extend(rf[step])
-        red_feat.extend(m[step])
-        red_feat.extend(rs[step])
-        red_feat.extend(ra[step])
+        red_feat.extend(rg[step]); red_feat.extend(rf[step]); red_feat.extend(m[step]); red_feat.extend(rs[step]); red_feat.extend(ra[step])
     
     X_red = np.array([red_feat])
-    red_probs = red_model.predict_proba(X_red)[0]
-    top_12_red = np.argsort(red_probs)[-12:] + 1
-    top_12_red = sorted(top_12_red)
+    p_red_xgb = red_xgb.predict_proba(X_red)[0]
+    p_red_lgbm = red_lgbm.predict_proba(X_red)[0]
+    red_probs = (p_red_xgb + p_red_lgbm) / 2.0
+    
+    top_12_red = sorted(np.argsort(red_probs)[-12:] + 1)
     
     # Blue Features
     blue_feat = []
     for step in range(len(df_context) - seq_len, len(df_context)):
-        blue_feat.extend(bg[step])
-        blue_feat.extend(bf[step])
+        blue_feat.extend(bg[step]); blue_feat.extend(bf[step])
     
     X_blue = np.array([blue_feat])
-    blue_probs = blue_model.predict_proba(X_blue)[0]
+    p_blue_xgb = blue_xgb.predict_proba(X_blue)[0]
+    p_blue_lgbm = blue_lgbm.predict_proba(X_blue)[0]
+    blue_probs = (p_blue_xgb + p_blue_lgbm) / 2.0
     pred_blue = np.argmax(blue_probs) + 1
     
     last_issue = df.iloc[-1]['issue']
     next_issue = int(last_issue) + 1
     
-    print(f"Predictions for Draw {next_issue}:")
-    print(f"Red Balls (Top 12): {top_12_red}")
-    print(f"Blue Ball (Top 1): {pred_blue}")
+    print(f"Ensemble Predictions for Draw {next_issue}:")
+    print(f"Red Balls (Top 12): {[int(x) for x in top_12_red]}")
+    print(f"Blue Ball (Top 1): {int(pred_blue)}")
     
-    # Now let's analyze 26012 specifically
-    # 26012 is the last draw in the CSV.
-    # To predict 26012, we would have used features from before it.
+    # Simulation Analysis
+    i_sim = len(df_context) - 1
+    red_feat_sim = []
+    for step in range(i_sim - seq_len, i_sim):
+        red_feat_sim.extend(rg[step]); red_feat_sim.extend(rf[step]); red_feat_sim.extend(m[step]); red_feat_sim.extend(rs[step]); red_feat_sim.extend(ra[step])
     
-    # Analysis for Draw 26012
-    # To see what it WOULD have predicted without knowing 26012, 
-    # we use features up to the draw before 26012.
-    i_26012 = len(df_context) - 1
-    red_feat_26012 = []
-    for step in range(i_26012 - seq_len, i_26012):
-        red_feat_26012.extend(rg[step])
-        red_feat_26012.extend(rf[step])
-        red_feat_26012.extend(m[step])
-        red_feat_26012.extend(rs[step])
-        red_feat_26012.extend(ra[step])
+    X_red_sim = np.array([red_feat_sim])
+    p_red_xgb_sim = red_xgb.predict_proba(X_red_sim)[0]
+    p_red_lgbm_sim = red_lgbm.predict_proba(X_red_sim)[0]
+    probs_sim = (p_red_xgb_sim + p_red_lgbm_sim) / 2.0
     
-    X_red_26012 = np.array([red_feat_26012])
-    probs_26012 = red_model.predict_proba(X_red_26012)[0]
-    top_12_pred_26012 = sorted(np.argsort(probs_26012)[-12:] + 1)
-    actual_26012 = [3, 5, 7, 16, 20, 24]
+    top_12_pred_sim = sorted(np.argsort(probs_sim)[-12:] + 1)
+    actual_sim = [int(x) for x in df.iloc[-1][['red1', 'red2', 'red3', 'red4', 'red5', 'red6']].values]
     
-    print(f"\nAnalysis for Draw 26012 (Simulation):")
-    print(f"Top 12 Predicted: {top_12_pred_26012}")
-    print(f"Actual Red: {actual_26012}")
-    hits = set(top_12_pred_26012) & set(actual_26012)
+    print(f"\nAnalysis for Last Draw {last_issue} (Simulation):")
+    print(f"Top 12 Predicted: {[int(x) for x in top_12_pred_sim]}")
+    print(f"Actual Red: {actual_sim}")
+    hits = set(top_12_pred_sim) & set(actual_sim)
     print(f"Hits: {len(hits)}/6 {sorted(list(hits))}")
-    for r in actual_26012:
-        prob = probs_26012[r-1]
-        rank = 33 - np.where(np.argsort(probs_26012) == (r-1))[0][0]
-        print(f"  Ball {r:02d}: Prob={prob:.4f}, Rank={rank}")
 
 if __name__ == '__main__':
     predict()
+

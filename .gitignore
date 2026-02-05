@@ -1,2 +1,35 @@
 .worktrees/
 flutter_app/run_log.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# ML Models (too large for git)
+*.joblib
+*.pkl
+*.h5
+*.pb
+
+# Temporary files
+nul
+*.tmp
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
