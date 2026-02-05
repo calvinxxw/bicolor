@@ -19,6 +19,9 @@ build/
 *.h5
 *.pb
 
+# APK files (too large for git)
+*.apk
+
 # Temporary files
 nul
 *.tmp
@@ -33,3 +36,6 @@ nul
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude settings
+.claude/settings.local.json
