@@ -11,9 +11,9 @@ The "brain" of the system resides in GitHub Actions. To ensure data accuracy, re
 *   **Schedule:** Monday, Wednesday, and Friday at **09:15 AM (Beijing Time)**.
 *   **Workflow:**
     *   **Crawls:** Fetches the latest draw data via `data_crawler.py`.
-    *   **Dual-Window Training:**
-        *   **Red Balls (Window: 50):** Focused on high-sensitivity recent trends (48.0% 3+ hit rate).
-        *   **Blue Ball (Window: 1000):** Optimized for long-term statistical stability (6.0% hit rate).
+    *   **Full-History Training:**
+        *   **Red Balls:** Trained on all available draws.
+        *   **Blue Ball:** Trained on all available draws.
     *   **ONNX Export:** Models are converted to `.onnx` for mobile efficiency.
     *   **Auto-Commit:** The system pushes updated models and `ssq_data.csv` back to the repository.
 
@@ -24,7 +24,7 @@ The Flutter application features an **"OTA (Over-The-Air) Model Sync"** capabili
 *   **Dynamic Loading:** Models are stored locally on the phone and prioritized by the AI engine.
 
 ## 📈 ML Performance Analysis
-Based on backtesting the latest 100 draws (comparing different window sizes):
+Historical window-size backtest results (for reference):
 
 | Window Size | Red 3+ % | Red 4+ % | Blue % |
 | :--- | :--- | :--- | :--- |

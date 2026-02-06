@@ -9,6 +9,7 @@ import onnxmltools
 from onnxmltools.convert.common.data_types import FloatTensorType
 from data_crawler import fetch_full_ssq_data
 from train_xgboost import calculate_features, prepare_blue_features
+from training_config import RED_WINDOW, BLUE_WINDOW, SEQ_LEN, select_context
 
 def incremental_update():
     # 1. Fetch the latest data
@@ -35,19 +36,19 @@ def incremental_update():
     print(f"Dataset updated. Total records: {len(df_combined)}. Newest issue: {latest_new}")
 
     # 2. Prepare Features
-    print("Step 2: Preparing features with ensemble windows (Red: 50, Blue: 1000)...")
+    print("Step 2: Preparing features with full-history training windows...")
     
     # Red Training
-    red_window_size = 50
-    df_red = df_combined.tail(red_window_size + 15).copy().reset_index(drop=True)
+    red_window_size = RED_WINDOW
+    df_red = select_context(df_combined, red_window_size, SEQ_LEN)
     rg, rf, m, rs, ra = calculate_features(df_red)
     
     # Blue Training
-    blue_window_size = 1000
-    df_blue = df_combined.tail(blue_window_size + 15).copy().reset_index(drop=True)
+    blue_window_size = BLUE_WINDOW
+    df_blue = select_context(df_combined, blue_window_size, SEQ_LEN)
     bg, bf = prepare_blue_features(df_blue)
     
-    seq_len = 15
+    seq_len = SEQ_LEN
     X_red, y_red = [], []
     X_blue, y_blue = [], []
     

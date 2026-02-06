@@ -30,7 +30,7 @@ jobs:
       - name: Run Incremental Update
         run: |
           # Run the update script. 
-          # It will fetch data, retrain 50/1000 windows, and save .onnx files.
+          # It will fetch data, retrain on the full history, and save .onnx files.
           python ml_training/incremental_update.py
 
       - name: Commit and Push Changes

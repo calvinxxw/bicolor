@@ -5,6 +5,7 @@ import 'screens/manual_selection_screen.dart';
 import 'screens/bet_calculator_screen.dart';
 import 'screens/backtest_screen.dart';
 import 'screens/manual_entry_screen.dart';
+import 'screens/debug_screen.dart';
 import 'models/bet_selection.dart';
 
 void main() {
@@ -37,6 +38,10 @@ class MyApp extends StatelessWidget {
           return MaterialPageRoute(
             builder: (context) => BetCalculatorScreen(selection: selection),
           );
+        } else if (settings.name == '/debug') {
+          return MaterialPageRoute(
+            builder: (context) => DebugScreen(),
+          );
         }
         return null;
       },
@@ -45,7 +50,10 @@ class MyApp extends StatelessWidget {
 }
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final List<Widget>? screens;
+  final List<String>? titles;
+
+  const MainScreen({super.key, this.screens, this.titles});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -54,13 +62,13 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
+  List<Widget> get _screens => widget.screens ?? const [
     const HomeScreen(),
     const ManualSelectionScreen(),
     const BacktestScreen(),
   ];
 
-  final List<String> _titles = [
+  List<String> get _titles => widget.titles ?? const [
     '双色球',
     '手动选号',
     '历史回测',
@@ -72,6 +80,24 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: Text(_titles[_currentIndex]),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: _currentIndex == 0
+            ? [
+                PopupMenuButton<int>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 0) {
+                      Navigator.pushNamed(context, '/debug');
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 0,
+                      child: Text('Debug'),
+                    ),
+                  ],
+                ),
+              ]
+            : null,
       ),
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(

@@ -5,6 +5,17 @@ import os
 import xgboost as xgb
 import lightgbm as lgb
 
+from training_config import (
+    RED_WINDOW,
+    BLUE_WINDOW,
+    SEQ_LEN,
+    ALPHA_R,
+    BETA_R,
+    ALPHA_B,
+    BETA_B,
+    select_context,
+)
+
 def calculate_ac_value(reds):
     diffs = set()
     for i in range(len(reds)):
@@ -35,8 +46,8 @@ def calculate_features_single(df_window):
         if i > 0:
             w30, w5 = df.iloc[max(0, i-30):i], df.iloc[max(0, i-5):i]
             for num in range(1, 34):
-                red_freqs[i, num-1] = (w30[red_cols] == num).any(axis=1).sum() / 30.0
-                momentum[i, num-1] = (w5[red_cols] == num).any(axis=1).sum() / 5.0
+                red_freqs[i, num-1] = ((w30[red_cols] == num).any(axis=1).sum() + ALPHA_R) / (30.0 + ALPHA_R + BETA_R)
+                momentum[i, num-1] = ((w5[red_cols] == num).any(axis=1).sum() + ALPHA_R) / (5.0 + ALPHA_R + BETA_R)
             
             prev_reds = sorted([int(df.iloc[i-1][col]) for col in red_cols])
             red_stats[i, 0] = sum(prev_reds) / 200.0
@@ -82,7 +93,7 @@ def prepare_blue_features_single(df_window):
         if i > 0:
             w30 = df.iloc[max(0, i-30):i]
             for num in range(1, 17):
-                blue_freqs[i, num-1] = (w30['blue'] == num).sum() / 30.0
+                blue_freqs[i, num-1] = ((w30['blue'] == num).sum() + ALPHA_B) / (30.0 + ALPHA_B + BETA_B)
         
         for num in range(1, 17):
             if num == blue: current_blue_gaps[num-1] = 0
@@ -100,16 +111,16 @@ def predict():
     blue_xgb = joblib.load(os.path.join(base_path, 'blue_ball_xgb.joblib'))
     blue_lgbm = joblib.load(os.path.join(base_path, 'blue_ball_lgbm.joblib'))
     
-    df_context = df.tail(45).copy().reset_index(drop=True)
-    rg, rf, m, rs, ra = calculate_features_single(df_context)
-    bg, bf = prepare_blue_features_single(df_context)
+    red_context = select_context(df, RED_WINDOW, SEQ_LEN)
+    blue_context = select_context(df, BLUE_WINDOW, SEQ_LEN)
+    rg, rf, m, rs, ra = calculate_features_single(red_context)
+    bg, bf = prepare_blue_features_single(blue_context)
     
-    seq_len = 15
-    i = len(df_context) 
+    seq_len = SEQ_LEN
     
     # Red Features
     red_feat = []
-    for step in range(len(df_context) - seq_len, len(df_context)):
+    for step in range(len(red_context) - seq_len, len(red_context)):
         red_feat.extend(rg[step]); red_feat.extend(rf[step]); red_feat.extend(m[step]); red_feat.extend(rs[step]); red_feat.extend(ra[step])
     
     X_red = np.array([red_feat])
@@ -121,7 +132,7 @@ def predict():
     
     # Blue Features
     blue_feat = []
-    for step in range(len(df_context) - seq_len, len(df_context)):
+    for step in range(len(blue_context) - seq_len, len(blue_context)):
         blue_feat.extend(bg[step]); blue_feat.extend(bf[step])
     
     X_blue = np.array([blue_feat])
@@ -138,7 +149,7 @@ def predict():
     print(f"Blue Ball (Top 1): {int(pred_blue)}")
     
     # Simulation Analysis
-    i_sim = len(df_context) - 1
+    i_sim = len(red_context) - 1
     red_feat_sim = []
     for step in range(i_sim - seq_len, i_sim):
         red_feat_sim.extend(rg[step]); red_feat_sim.extend(rf[step]); red_feat_sim.extend(m[step]); red_feat_sim.extend(rs[step]); red_feat_sim.extend(ra[step])

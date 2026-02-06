@@ -1,10 +1,10 @@
-# Lottery Predictor v6 - Enhanced ML Edition
+# Lottery Predictor v8 - Debug Tools Edition
 
 ## APK Information
 
-**File**: `lottery_predictor_v6_enhanced_ml.apk`
-**Size**: 89.6 MB (90 MB on disk)
-**Build Date**: February 5, 2026
+**File**: `lottery_predictor_v8_debug_tools.apk`
+**Size**: 89.9 MB (90 MB on disk)
+**Build Date**: February 6, 2026
 **Flutter Version**: 3.38.5
 **Build Type**: Release (optimized)
 
@@ -88,6 +88,8 @@ flutter build apk --release
 
 ## Version History
 
+- **v8 (Debug Tools)**: Added in-app debug screen and feature diagnostics
+- **v7 (Sorting Fix)**: Corrected draw sorting and latest-data ordering
 - **v6 (Enhanced ML)**: Improved preprocessing, evaluation, and training pipeline
 - **v5 (Ensemble)**: XGBoost + LightGBM ensemble with dual-window training
 - **v4 (Auto)**: Automatic model retraining
@@ -106,6 +108,6 @@ See `ml_training/OPTIMIZATION_SUMMARY.md` for complete documentation.
 
 ---
 
-**Built**: February 5, 2026
+**Built**: February 6, 2026
 **Framework**: Flutter 3.38.5
 **Models**: XGBoost + LightGBM Ensemble

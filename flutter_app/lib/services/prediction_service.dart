@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../models/lottery_result.dart';
 import '../models/prediction_result.dart';
 import 'data_service.dart';
+import 'database_service.dart';
+import 'feature_utils.dart';
 
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -24,6 +26,7 @@ class PredictionService {
   final _lock = Lock();
 
   final DataService _dataService = DataService();
+  final DatabaseService _dbService = DatabaseService();
   final Dio _dio = Dio();
 
   Future<void> init() async {
@@ -108,19 +111,20 @@ class PredictionService {
     if (!_isLoaded) throw Exception("AI引擎加载失败");
 
     return await _lock.synchronized(() async {
-      // Need at least 1000 + 15 history results for the windows
-      List<LotteryResult> history = await _dataService.getRecentResults(1100);
-      if (history.length < 1015) {
+      List<LotteryResult> history = await _dbService.getAllResults();
+      if (history.isEmpty) {
         await _dataService.syncData();
-        history = await _dataService.getRecentResults(1100);
+        history = await _dbService.getAllResults();
       }
-      if (history.length < 1015) {
-        // Fallback for blue ball features if history is short, but warn
-        print("PredictionService: Warning: Limited history (${history.length})");
+      if (history.length < FeatureUtils.seqLen + 1) {
+        throw Exception("PredictionService: Insufficient history (${history.length})");
       }
 
-      const int seqLen = 15;
-      final recent = history.reversed.toList();
+      final recent = FeatureUtils.selectContext(
+        history.reversed.toList(),
+        FeatureUtils.redWindow,
+        FeatureUtils.seqLen,
+      );
       final primes = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31};
 
       Map<int, Map<int, int>> coMatrix = {};
@@ -135,11 +139,11 @@ class PredictionService {
       }
 
       // Flattened features for XGBoost
-      var redFeatures = Float32List(seqLen * 119);
-      var blueFeatures = Float32List(seqLen * 32);
+      var redFeatures = Float32List(FeatureUtils.seqLen * 119);
+      var blueFeatures = Float32List(FeatureUtils.seqLen * 32);
 
-      for (int step = 0; step < seqLen; step++) {
-        int i = recent.length - seqLen + step + 1;
+      for (int step = 0; step < FeatureUtils.seqLen; step++) {
+        int i = recent.length - FeatureUtils.seqLen + step + 1;
         List<int> prevReds = List<int>.from(recent[i - 1].redBalls)..sort();
 
         // Red Features (119 per step)
@@ -148,8 +152,20 @@ class PredictionService {
           int gap = 0;
           for (int k = i - 1; k >= 0; k--) { if (recent[k].redBalls.contains(n)) break; gap++; }
           redFeatures[redBase + (n - 1)] = min(gap / 50.0, 1.0);
-          redFeatures[redBase + 33 + (n - 1)] = recent.sublist(max(0, i - 30), i).where((r) => r.redBalls.contains(n)).length / 30.0;
-          redFeatures[redBase + 66 + (n - 1)] = recent.sublist(max(0, i - 5), i).where((r) => r.redBalls.contains(n)).length / 5.0;
+          final redFreqHits = recent.sublist(max(0, i - 30), i).where((r) => r.redBalls.contains(n)).length;
+          redFeatures[redBase + 33 + (n - 1)] = FeatureUtils.smoothedFrequency(
+            redFreqHits,
+            30,
+            FeatureUtils.alphaR,
+            FeatureUtils.betaR,
+          );
+          final redMomentumHits = recent.sublist(max(0, i - 5), i).where((r) => r.redBalls.contains(n)).length;
+          redFeatures[redBase + 66 + (n - 1)] = FeatureUtils.smoothedFrequency(
+            redMomentumHits,
+            5,
+            FeatureUtils.alphaR,
+            FeatureUtils.betaR,
+          );
         }
 
         redFeatures[redBase + 99 + 0] = prevReds.reduce((a, b) => a + b) / 200.0;
@@ -176,12 +192,18 @@ class PredictionService {
 
         // Blue Features (32 per step)
         int blueBase = step * 32;
-        int i_blue = recent.length - seqLen + step;
+        int i_blue = recent.length - FeatureUtils.seqLen + step;
         for (int n = 1; n <= 16; n++) {
           int g = 0;
           for (int k = i_blue - 1; k >= 0; k--) { if (recent[k].blueBall == n) break; g++; }
           blueFeatures[blueBase + (n - 1)] = min(g / 50.0, 1.0);
-          blueFeatures[blueBase + 16 + (n - 1)] = recent.sublist(max(0, i_blue - 30), i_blue).where((r) => r.blueBall == n).length / 30.0;
+          final blueFreqHits = recent.sublist(max(0, i_blue - 30), i_blue).where((r) => r.blueBall == n).length;
+          blueFeatures[blueBase + 16 + (n - 1)] = FeatureUtils.smoothedFrequency(
+            blueFreqHits,
+            30,
+            FeatureUtils.alphaB,
+            FeatureUtils.betaB,
+          );
         }
       }
 
